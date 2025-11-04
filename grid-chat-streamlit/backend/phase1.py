@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
+from opik.integrations.langchain import OpikTracer
 
 from griddiagnostics import gd_userquery_execute
 
@@ -62,6 +63,8 @@ class GridChat:
         # Build the graph
         self._build_graph()
         print("✓ Graph built successfully")
+        # Track the graph structure:
+        self.tracer = OpikTracer(graph=self.graph.get_graph(xray=True))
     
     ####################################################################
     def query_prepare(self, state: GridState) -> Dict:
@@ -231,7 +234,8 @@ INSTRUCTIONS:
 2. If results were found, summarize the key information
 3. If no results were found, explain this clearly
 4. Use a friendly, professional tone
-5. Include specific details from the results when available
+5. Include specific details from the results when available. 
+6. If QUERY RESULTS are not relevant to QUESTION mention clearly and do not gets the results by yourself. 
 
 RESPONSE:"""
         
