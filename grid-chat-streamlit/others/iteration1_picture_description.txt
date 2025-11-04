@@ -1,0 +1,21 @@
+You need to prepare a picture, which can be used as part of design details. This pic is part of agentic AI implementation. Pic should contain information on Architecture and design details of the implementation. High level blocks and their connections can be shown in the picutre. 
+
+Details for drawing the picutre is given below..
+
+1) a RDBMS data base is used in read only mode. Data write to this RDBMS is not in the scope of this pic. This data base consists of diganostics details in the form of events of a power grid. The database name is 'gridevents.db'
+
+2) A langgraph is used with 3 main nodes in sequential work flow. The nodes are 'query_prepare', 'query_execute', 'query_results_report'.
+
+3) "Graphical User Interface (GUI)" for simple user interactions with the system.
+
+4) comet opik used for tracking purpose.
+
+5) The data flow is as follows - 
+a) Either user may type the question or he may select any of the pre-populated question from the list using GUI in natural language.
+b) The selected question will be sent to 'query_prepare' node and the LLM used in the node will be responsible for peparation of SQL query. Required database tables and their schema also sent to LLM as part of prompt. 
+c) 'query_execute' node of lang graph will take the input as prepared sql query post validation the query will be sent for exeuction with the hlep of an 'gd_userquery_execute' API to get the actual data from the 'gridevents.db' database.  
+d) received response from 'query_execute' node will be sent to 'query_results_report' node for relevency check and summarization of results with the help of LLM. On receiving the response from LLM the same will be sent to show in GUI as a response to the question.  
+e) After showing the response, your may enter another query. Steps from a) to d) follows.
+
+6) only 'query_execute' node will have access to the 'gridevents.db'
+7) GUI should also need to show the anser to the user query. The answer back to UI should also be shown in the pic.
