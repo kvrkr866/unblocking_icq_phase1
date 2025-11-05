@@ -98,9 +98,9 @@ def insert_data_into_tables(db_name: str):
 
     # Insert sample severity data
     severities = [
-        (1, 'Low', 'Low severity issue'),
-        (2, 'Medium', 'Medium severity issue'),
-        (3, 'High', 'High severity issue')
+        (1, 'Preventative', 'Preventative measures or minor localized faults'),
+        (2, 'Warning', 'Formal alerts, system resources are fully committed and reliability is threatened'),
+        (3, 'Emergency', 'Formal emergency declaration, load loss is probable or actively occurring')
     ]
 
 
@@ -109,14 +109,63 @@ def insert_data_into_tables(db_name: str):
         (1, 'Disk Space Low', 'System', 'Disk space is running low on the server'),
         (2, 'Login Failed', 'Security', 'Failed login attempt detected'),
         (3, 'Service Restarted', 'Maintenance', 'A service was restarted successfully')
+        (1, 'Flex Alert Issued', 'Grid Operation (Preventative)', 'A public call for voluntary energy conservation to reduce demand'),
+        (2, 'Restricted Maintenance Operations (RMO)', 'Grid Operation (Preventative)', 'Order requiring operators to postpone planned outages to ensure asset availability'),
+        (3, 'EEA Watch Issued', 'Grid Emergency (Energy)', 'Day-ahead or real-time analysis shows energy deficiencies are expected'),
+        (4, 'EEA 1 Issued', 'Grid Emergency (Energy)', 'Real-time analysis shows all resources are in use and deficiencies are expected'),
+        (5, 'EEA 2 Issued', 'Grid Emergency (Energy)', 'ISO requests emergency energy and has activated emergency demand response programs'),
+        (6, 'EEA 3 (Preparation for Outages)', 'Grid Emergency (Energy)', 'ISO unable to meet minimum reliability reserves; utilities alerted to prepare for outages'),
+        (7, 'EEA 3 (Ordering Rotating Outages)', 'Grid Emergency (Energy)', 'ISO has ordered utilities to begin rotating power outages (firm load shed)'),
+        (8, 'Transmission Emergency Declared', 'Grid Emergency (Transmission)', 'Declared for any event threatening or limiting transmission grid capability'),
+        (9, 'Forced Generation Outage', 'Asset Outage (Generation)', 'An unplanned, sudden generator outage due to equipment failure or other notice'),
+        (10, 'Planned Generation Outage', 'Asset Outage (Generation)', 'A generator outage submitted at least seven days in advance for maintenance'),
+        (11, 'Forced Line Outage (Vegetation)', 'Asset Outage (Transmission)', 'A transmission line is forced offline due to contact with vegetation'),
+        (12, 'Forced Line Outage (Substation Equipment)', 'Asset Outage (Transmission)', 'A line outage caused by a failure of substation equipment'),
+        (13, 'Forced Line Outage (Circuit Breaker)', 'Asset Outage (Transmission)', 'A line outage specifically attributed to "Circuit Breaker Trouble"'),
+        (14, 'Forced Line Outage (Protection)', 'Asset Outage (Transmission)', 'An outage caused by the operation of a protection system (e.g., a relay)'),
+        (15, 'Forced Line Outage (Other/Weather)', 'Asset Outage (Transmission)', 'An outage caused by other factors, such as high winds, wildfires, or vandalism'),
+        (16, 'Emergency Demand Response Dispatch', 'Grid Operation (Preventative)', 'Activation of formal, out-of-market demand response programs')
     ]
 
 
     # Insert sample eventslog data with current timestamps
     event_logs = [
-        (1, 2, datetime.datetime.now().isoformat(), 'Open'),
-        (2, 3, datetime.datetime.now().isoformat(), 'Closed'),
-        (3, 1, datetime.datetime.now().isoformat(), 'Open')
+        ( 1 ,  5 ,  3 ,  '2021-07-09T21:30:00' ,  'ENDED' ),
+        ( 2 ,  4 ,  2 ,  '2021-07-09T22:00:00' ,  'ENDED' ),
+        ( 3 ,  1 ,  1 ,  '2022-09-05T15:00:00' ,  'DECLARED' ),
+        ( 4 ,  3 ,  2 ,  '2022-09-05T17:00:00' ,  'DECLARED' ), 
+        ( 5 ,  4 ,  2 ,  '2022-09-05T17:00:00' ,  'DECLARED' ),
+        ( 6 ,  1 ,  1 ,  '2022-09-06T15:00:00' ,  'DECLARED' ),
+        ( 7 ,  5 ,  3 ,  '2022-09-06T16:00:00' ,  'DECLARED' ),
+        ( 8 ,  6 ,  3 ,  '2022-09-06T17:17:00' ,  'DECLARED' ), 
+        ( 9 ,  16 ,  3 ,  '2022-09-06T17:45:00' ,  'DECLARED' ),
+        ( 10 ,  6 ,  3 ,  '2022-09-06T21:00:00' ,  'ENDED' ),
+        ( 11 ,  4 ,  2 ,  '2023-07-20T19:30:00' ,  'DECLARED' ),
+        ( 12 ,  4 ,  2 ,  '2023-07-20T22:00:00' ,  'ENDED' ),
+        ( 13 ,  3 ,  2 ,  '2023-07-25T19:26:00' ,  'DECLARED' ),
+        ( 14 ,  3 ,  2 ,  '2023-07-25T23:59:00' ,  'ENDED' ),
+        ( 15 ,  2 ,  1 ,  '2024-01-18T06:00:00' ,  'DECLARED' ),
+        ( 16 ,  2 ,  1 ,  '2024-01-21T23:59:00' ,  'ENDED' ),
+        ( 17 ,  8 ,  3 ,  '2024-03-01T08:50:00' ,  'DECLARED' ),
+        ( 18 ,  8 ,  3 ,  '2024-03-04T20:44:00' ,  'ENDED' ),
+        ( 19 ,  2 ,  1 ,  '2024-07-03T00:01:00' ,  'DECLARED' ),
+        ( 20 ,  2 ,  1 ,  '2024-07-07T23:59:00' ,  'ENDED' ),
+        ( 21 ,  8 ,  3 ,  '2024-07-18T14:35:00' ,  'DECLARED' ),
+        ( 22 ,  8 ,  3 ,  '2024-07-18T23:59:00' ,  'ENDED' ),
+        ( 23 ,  11 ,  1 ,  '2024-05-10T14:30:00' ,  'DECLARED' ),
+        ( 24 ,  11 ,  1 ,  '2024-05-10T18:00:00' ,  'ENDED' ),
+        ( 25 ,  12 ,  2 ,  '2024-06-15T09:15:00' ,  'DECLARED' ),
+        ( 26 ,  12 ,  2 ,  '2024-06-16T03:00:00' ,  'ENDED' ),
+        ( 27 ,  13 ,  1 ,  '2024-08-01T11:05:00' ,  'DECLARED' ),
+        ( 28 ,  13 ,  1 ,  '2024-08-01T16:20:00' ,  'ENDED' ),
+        ( 29 ,  15 ,  2 ,  '2025-01-20T08:00:00' ,  'DECLARED' ),
+        ( 30 ,  15 ,  2 ,  '2025-01-20T17:00:00' ,  'ENDED' ),
+        ( 31 ,  10 ,  1 ,  '2025-11-02T07:00:00' ,  'DECLARED' ),
+        ( 32 ,  10 ,  1 ,  '2025-11-05T17:00:00' ,  'ENDED' ), 
+        ( 33 ,  9 ,  2 ,  '2025-11-02T10:15:00' ,  'DECLARED' ),
+        ( 34 ,  9 ,  2 ,  '2025-11-03T16:00:00' ,  'ENDED' ),
+        ( 35 ,  9 ,  1 ,  '2025-11-02T11:00:00' ,  'DECLARED' ),
+        ( 36 ,  9 ,  1 ,  '2025-11-03T09:00:00' ,  'DECLARED' )
     ]
 
     conn = sqlite3.connect(db_name)
