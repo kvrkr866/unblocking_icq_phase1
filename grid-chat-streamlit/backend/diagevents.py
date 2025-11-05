@@ -4,7 +4,7 @@
 # Capstone Team 16
 #
 # Diagnostic Events Module
-# Contains query preparation and execution logic
+# Contains query preparation, execution, and response synthesis
 #   Author: RK (kvrkr866@gmail.com)
 #
 ##########################################################
@@ -12,7 +12,7 @@
 
 from typing import Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
-from prompts import PROMPT_SQL_GENERATION
+from prompts import PROMPT_SQL_GENERATION, PROMPT_SYNTHESIS
 from diagevents_dbif import gd_userquery_execute
 
 
@@ -150,3 +150,73 @@ def diagevents_query_execute(state: Dict) -> Dict:
             "query_raw_resp": [],
             "messages": state["messages"]
         }
+
+
+####################################################################
+def diagevents_synthesize_response(state: Dict, llm) -> Dict:
+    """
+    Synthesize final response for diagnostics queries.
+    
+    Args:
+        state: Current graph state containing SQL results
+        llm: Language model for synthesis
+        
+    Returns:
+        Dictionary with final response and updated messages
+    """
+    print(f"\n{'='*60}")
+    print("NODE: diagevents_synthesize_response - Generating diagnostics response")
+    print(f"{'='*60}")
+    
+    query_raw_resp = state.get('query_raw_resp', [])
+    original_query = state.get('user_query', '')
+    sql_query = state.get('sql_query', '')
+    messages = state.get('messages', [])
+    
+    # Format SQL results
+    if query_raw_resp:
+        formatted_results = []
+        for i, row in enumerate(query_raw_resp, 1):
+            formatted_results.append(f"Row {i}: {row}")
+        query_tuned_resp = "\n".join(formatted_results)
+        print(f"Formatting {len(query_raw_resp)} rows of SQL results")
+    else:
+        query_tuned_resp = "No results found"
+        print("No SQL results to format")
+    
+    # Build synthesis prompt for diagnostics
+    synthesis_prompt = f"""{PROMPT_SYNTHESIS}
+
+USER'S ORIGINAL QUESTION:
+{original_query}
+
+SQL QUERY EXECUTED:
+{sql_query}
+
+QUERY RESULTS:
+{query_tuned_resp}
+
+INSTRUCTIONS:
+Provide a clear, natural language answer based on the SQL query results above.
+Focus on power grid diagnostic events, severities, and event logs.
+
+RESPONSE:"""
+    
+    # LLM invocation
+    final_response = llm.invoke([
+        SystemMessage(content="You are a helpful database query assistant for power grid diagnostics."),
+        HumanMessage(content=synthesis_prompt)
+    ])
+    
+    final_answer = final_response.content
+    print(f"Generated diagnostics response ({len(final_answer)} characters)")
+    
+    # Update conversation context
+    conversation_summary = f"Q: {original_query}\nA: {final_answer[:200]}..."
+    updated_messages = messages + [AIMessage(content=final_answer)]
+    
+    return {
+        "query_final_resp": final_answer,
+        "messages": updated_messages,
+        "conversation_context": conversation_summary
+    }

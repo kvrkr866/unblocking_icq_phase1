@@ -15,6 +15,8 @@
 #        -- Tested with minimal set of UT data and generated Evals and measurements.
 #
 #     Iteration 2 -
+#        -- Added query classifier for routing
+#        -- Added RAG support for queue queries
 #   
 ##########################################################
 """
@@ -49,7 +51,7 @@ class GridChat:
     """
     Grid Chat main orchestrator with memory for contextual conversations.
     
-    This class coordinates different modules (diagevents, future features)
+    This class coordinates different modules (diagevents, pgicq_kb)
     and maintains the conversation flow.
     """
     
@@ -72,7 +74,6 @@ class GridChat:
         from langchain_core.documents import Document
         import time
         from constants import PGICQ_KB_PERSIST_DIRECTORY, PGICQ_KB_COLLECTION_NAME
-
 
         
         load_dotenv()
@@ -121,32 +122,47 @@ class GridChat:
         self.tracer = OpikTracer(graph=self.graph.get_graph(xray=True))
     
     ####################################################################
-    # Wrapper methods for modular functions
+    # Node functions
     ####################################################################
-    def userquery_classifier(self, state: GridState)-> Literal["diagnostics", "queue", "general"]:
-        """Determine classification of user query into diagnostics or queue or general """
-        print("Entered in userquery_classifier")
+    
+    def userquery_classifier(self, state: GridState) -> Dict:
+        """
+        Determine classification of user query into diagnostics or queue or general.
         
-        # Get original query and agent's last response
-        user_query = state["messages"][0].content if state["messages"] else ""
-
+        FIXED: Returns Dict to update state, not the classification directly.
+        """
+        print(f"\n{'='*60}")
+        print("NODE: userquery_classifier - Classifying user query")
+        print(f"{'='*60}")
         
+        # Get user query from state
+        user_query = state.get("user_query", "")
+        if not user_query and state.get("messages"):
+            last_msg = state["messages"][-1]
+            user_query = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+        
+        print(f"User query: {user_query}")
+        
+        # Create classifier chain
         classifier_chain = USERQUERY_CLASSIFIER_PROMPT | self.llm | StrOutputParser()
-        userquery_type = classifier_chain.invoke({"question": state["user_query"]}).strip().lower()
+        userquery_type = classifier_chain.invoke({"question": user_query}).strip().lower()
         
         # Ensure category is valid
         valid_categories = ["diagnostics", "queue", "general"]
         if userquery_type not in valid_categories:
             userquery_type = "general"
         
-        print(f"Question: {state['user_query']}, Category: {userquery_type}")
+        print(f"Classified as: {userquery_type}")
         
+        # FIXED: Return dict to update state
         return {
-            **state,
-            "userquery_type": userquery_type
+            "userquery_type": userquery_type,
+            "user_query": user_query
         }
  
-
+    ####################################################################
+    # Wrapper methods for modular functions
+    ####################################################################
 
     def w_diagevents_query_prepare(self, state: GridState) -> Dict:
         """
@@ -161,130 +177,133 @@ class GridChat:
         This allows easy swapping of modules in the future.
         """
         return diagevents_query_execute(state)
-    
-    def w_pgicq_kb_create_n_initialize():
-        """wrapper to perform PGICQ RAG KB initialize (RAG)"""
-        return pgicq_kb_create_n_initialize()
 
     def w_pgicq_kb_query(self, state: GridState) -> Dict:
-        """wrapper to perform query on power grid interconnection queue KB (RAG)"""
+        """Wrapper to perform query on power grid interconnection queue KB (RAG)"""
         return pgicq_kb_query(state, self.retriever, self.vector_store)
 
-    def w_pgicq_resp_validate(self, state: GridState) -> str:
-            """wrapper to perform validation check on received response from RAG """
-            return pgicq_resp_validate(state, self.retriever, self.llm)
+    def w_pgicq_resp_validate(self, state: GridState) -> Dict:
+        """Wrapper to perform validation check on received response from RAG"""
+        return pgicq_resp_validate(state, self.llm)
 
     def w_pgicq_kb_query_rewrite(self, state: GridState) -> Dict:
-            """wrapper to perform query rewrite on ower grid interconnection queue initial query """
-            return pgicq_kb_query_rewrite(state, self.llm)
+        """Wrapper to perform query rewrite on power grid interconnection queue initial query"""
+        return pgicq_kb_query_rewrite(state, self.llm)
 
     ####################################################################
-    # routing methods for lang graph conditional nodes 
+    # Routing methods for langgraph conditional edges
+    # FIXED: Added self parameter and return string (not dict)
     ####################################################################
-    def route_userquery(state: GridState) -> Literal["w_diagevents_query_prepare", "queue", "prepare_final_response"]:
+    
+    def route_userquery(self, state: GridState) -> str:
         """
-        Conditional router: on user query decides the next node based on doc_type.
+        Conditional router: decides next node based on userquery_type.
+        
+        FIXED: 
+        - Added self parameter
+        - Returns string (route name), not dict
         """
-
-        userquery_type = state.get("userquery_type", "").lower()
+        userquery_type = state.get("userquery_type", "general").lower()
+        
+        print(f"Routing based on type: {userquery_type}")
+        
         if userquery_type == "diagnostics":
-            print("User requested - diagnostics event data")
+            print("→ Routing to diagnostics flow")
             return "w_diagevents_query_prepare"
         elif userquery_type == "queue":
-            print("User requested - grid interconnection queue info")
+            print("→ Routing to queue (RAG) flow")
             return "w_pgicq_kb_query"
-        elif userquery_type == "general":
-            print("User requested - General information going to final response")
-            return "prepare_final_response" 
-        else:
-            print("User requested - Unable to classify user request, forcing to final resp ")
-            return "prepare_final_response" 
+        else:  # general
+            print("→ Routing to general response")
+            return "prepare_final_response"
         
-    def pgicq_resp_evaluator(state: GridState) -> Literal["prepare_final_response", "w_pgicq_kb_query_rewrite"]:
+    def route_pgicq_validation(self, state: GridState) -> str:
         """
-        Conditional router: decides the next node based on relevane check on RAG respone.
+        Conditional router: decides next node based on RAG response validation.
+        
+        FIXED: 
+        - Renamed from pgicq_resp_evaluator
+        - Added self parameter
+        - Returns string (route name), not dict
+        - Proper iteration limit check
         """
         # Safety: limit iterations
-        count = state.get("iteration_count", 0)
-        if count >= 3:
-            print("Max iterations reached - moving to synthesizer")
-            return "synthesizer"
+        iteration_count = state.get("iteration_count", 0)
+        if iteration_count >= 3:
+            print("Max iterations reached (3) - moving to final response")
+            return "prepare_final_response"
         
-        state["iteration_count"] = count + 1
+        decision = state.get("evaluator_decision", "no").lower()
         
-        decision = state.get("evaluator_decision", "").lower()
+        print(f"Validation decision: {decision}, iteration: {iteration_count}")
+        
         if decision == "yes":
-            print("Satisfied with answer - moving to final response")
+            print("→ Response validated - moving to final response")
             return "prepare_final_response"
         else:
-            print("Not satisfied - rewriting query")
+            print("→ Response needs improvement - rewriting query")
             return "w_pgicq_kb_query_rewrite"
-
 
     ####################################################################
     def prepare_final_response(self, state: GridState) -> Dict:
         """
-        Synthesize final answer from the executed query results with context awareness.
+        Route to appropriate response preparation based on query type.
         
-        This is a common function that will be used across all features.
-        It takes query results and generates a natural language response.
-        
-        Improvements:
-        - Better formatting of results
-        - Handle empty results gracefully
-        - Improved synthesis prompt
-        - Proper message construction
+        This is a lightweight router that delegates to module-specific functions.
         """
         print(f"\n{'='*60}")
-        print("NODE: prepare_final_response - Generating final response")
+        print("NODE: prepare_final_response - Routing to specific synthesizer")
         print(f"{'='*60}")
-
-        query_raw_resp = state.get('query_raw_resp', [])
+        
+        userquery_type = state.get('userquery_type', 'general')
+        print(f"Query type: {userquery_type}")
+        
+        # Route to appropriate module for response synthesis
+        if userquery_type == "diagnostics":
+            from diagevents import diagevents_synthesize_response
+            return diagevents_synthesize_response(state, self.llm)
+        
+        elif userquery_type == "queue":
+            from pgicq_kb import pgicq_synthesize_response
+            return pgicq_synthesize_response(state, self.llm)
+        
+        else:  # general
+            return self._general_response(state)
+    
+    def _general_response(self, state: GridState) -> Dict:
+        """
+        Handle general queries with direct LLM response.
+        
+        This stays in phase1.py as it's simple orchestration logic.
+        """
+        print("Generating general response")
+        
         original_query = state.get('user_query', '')
-        sql_query = state.get('sql_query', '')
         messages = state.get('messages', [])
         
-        # Better formatting of query results
-        if query_raw_resp:
-            formatted_results = []
-            for i, row in enumerate(query_raw_resp, 1):
-                formatted_results.append(f"Row {i}: {row}")
-            query_tuned_resp = "\n".join(formatted_results)
-            print(f"Formatting {len(query_raw_resp)} rows of results")
-        else:
-            query_tuned_resp = "No results found"
-            print("No results to format")
-        
-        # Build context-aware synthesis prompt
         synthesis_prompt = f"""{PROMPT_SYNTHESIS}
 
 USER'S ORIGINAL QUESTION:
 {original_query}
 
-SQL QUERY EXECUTED:
-{sql_query}
-
-QUERY RESULTS:
-{query_tuned_resp}
+INSTRUCTIONS:
+This is a general question. Provide a helpful, informative response based on your general knowledge.
 
 RESPONSE:"""
         
         # LLM invocation
         final_response = self.llm.invoke([
-            SystemMessage(content="You are a helpful database query assistant who maintains conversation context."),
+            SystemMessage(content="You are a helpful assistant who maintains conversation context."),
             HumanMessage(content=synthesis_prompt)
         ])
         
         final_answer = final_response.content
-        print(f"\nGenerated response ({len(final_answer)} characters)")
+        print(f"Generated general response ({len(final_answer)} characters)")
         
-        # Update conversation context for future queries
-        conversation_summary = f"Q: {original_query}\nA: {final_answer[:200]}..."  # Truncated summary
-        
-        # Append AI response to messages
+        # Update conversation context
+        conversation_summary = f"Q: {original_query}\nA: {final_answer[:200]}..."
         updated_messages = messages + [AIMessage(content=final_answer)]
         
-        # Return proper message format
         return {
             "query_final_resp": final_answer,
             "messages": updated_messages,
@@ -297,15 +316,18 @@ RESPONSE:"""
         Build the LangGraph workflow with memory.
         
         This is the orchestration layer that connects different modules.
-        Easy to extend with new features by adding new nodes and edges.
+        
+        FIXED:
+        - Corrected conditional edge mappings
+        - Fixed routing method references
+        - Proper node connections
         """
         
         workflow_builder = StateGraph(GridState)
         
         # Add nodes - using modular functions
         workflow_builder.add_node("userquery_classifier", self.userquery_classifier)
-
-
+        
         workflow_builder.add_node("w_diagevents_query_prepare", self.w_diagevents_query_prepare)
         workflow_builder.add_node("w_diagevents_query_execute", self.w_diagevents_query_execute)
         
@@ -315,36 +337,31 @@ RESPONSE:"""
 
         workflow_builder.add_node("prepare_final_response", self.prepare_final_response)
         
-        # Add edges (simple linear flow for now)
+        # Add edges
         workflow_builder.add_edge(START, "userquery_classifier")
-        # Define the Conditional Edges:
+        
+        # FIXED: Conditional routing from classifier
         workflow_builder.add_conditional_edges(
-            "userquery_classifier",       # Source node
-            self.route_userquery,   # Function to call to determine the next node
-            {                 # Mapping of the function's return value to the next node
-                "diagnostics": "w_diagevents_query_prepare",
-                "queue": "w_pgicq_kb_query",
-                "other": "prepare_final_response", # NEW MAPPING
-                END: END
-            }
+            "userquery_classifier",
+            self.route_userquery,  # This returns: "w_diagevents_query_prepare", "w_pgicq_kb_query", or "prepare_final_response"
         )
 
+        # Diagnostics flow
         workflow_builder.add_edge("w_diagevents_query_prepare", "w_diagevents_query_execute")
         workflow_builder.add_edge("w_diagevents_query_execute", "prepare_final_response")
 
+        # Queue (RAG) flow with validation loop
         workflow_builder.add_edge("w_pgicq_kb_query", "w_pgicq_resp_validate")
-        # Define the Conditional Edges:
+        
+        # FIXED: Conditional routing from validation
         workflow_builder.add_conditional_edges(
-            "w_pgicq_resp_validate",       # Source node
-            self.pgicq_resp_validate_should_end,   # Function to call to determine the next node
-            {                 # Mapping of the function's return value to the next node
-                "yes": "prepare_final_response",
-                "no": "w_pgicq_kb_query_rewrite",
-                END: END
-            }
+            "w_pgicq_resp_validate",
+            self.route_pgicq_validation,  # This returns: "prepare_final_response" or "w_pgicq_kb_query_rewrite"
         )
-
+        
         workflow_builder.add_edge("w_pgicq_kb_query_rewrite", "w_pgicq_kb_query")
+        
+        # Final response to end
         workflow_builder.add_edge("prepare_final_response", END)
 
         # Compile the graph WITH memory
@@ -361,11 +378,9 @@ RESPONSE:"""
         """
         Process a message using the Grid Chat system with memory.
         
-        Changes:
-        - Proper initial state structure
-        - Better error handling
-        - Cleaner result extraction
-        - Memory persistence across queries
+        FIXED:
+        - Proper user_query initialization
+        - Better state initialization
         
         Args:
             message: User's question
@@ -386,7 +401,7 @@ RESPONSE:"""
         # Configure with thread_id for memory persistence
         config = {
             "configurable": {"thread_id": session_id},
-            "recursion_limit": 10,
+            "recursion_limit": 20,  # Increased for RAG validation loops
             "callbacks": [self.tracer] if self.tracer else []
         }
         
@@ -406,14 +421,18 @@ RESPONSE:"""
             existing_messages = []
             conversation_context = ""
         
-        # Prepare initial state with conversation history
+        # FIXED: Prepare initial state with user_query properly set
         initial_state = {
             "messages": existing_messages + [HumanMessage(content=message)],
-            "user_query": "",
+            "user_query": message,  # FIXED: Set the actual query
             "sql_query": "",
             "query_raw_resp": [],
             "query_final_resp": "",
-            "conversation_context": conversation_context
+            "conversation_context": conversation_context,
+            "iteration_count": 0,  # Initialize iteration counter
+            "evaluator_decision": "",
+            "evaluator_feedback": "",
+            "userquery_type": ""
         }
         
         try:
@@ -448,6 +467,8 @@ RESPONSE:"""
             print(f"\n{'!'*60}")
             print(f"ERROR: {error_msg}")
             print(f"{'!'*60}\n")
+            import traceback
+            traceback.print_exc()
             return error_msg
     
     ####################################################################
@@ -468,7 +489,11 @@ RESPONSE:"""
                     "sql_query": "",
                     "query_raw_resp": [],
                     "query_final_resp": "",
-                    "conversation_context": ""
+                    "conversation_context": "",
+                    "iteration_count": 0,
+                    "evaluator_decision": "",
+                    "evaluator_feedback": "",
+                    "userquery_type": ""
                 }
             )
             print(f"✓ Memory cleared for thread: {session_id}")
@@ -499,22 +524,22 @@ if __name__ == "__main__":
     grid_chat = GridChat()
     grid_chat.initialize()
     
-    # Example conversation demonstrating memory
+    # Example conversation demonstrating different query types
     print("\n" + "="*60)
-    print("TESTING GRID CHAT SYSTEM WITH MODULAR ARCHITECTURE")
+    print("TESTING GRID CHAT SYSTEM WITH QUERY ROUTING")
     print("="*60)
     
-    # First question
+    # Test diagnostics query
     response1 = grid_chat.process_message("Show me all critical events from the last 24 hours")
-    print(f"\nResponse 1:\n{response1}\n")
+    print(f"\nDiagnostics Response:\n{response1}\n")
     
-    # Follow-up question using context
-    response2 = grid_chat.process_message("How many of those were related to power outages?")
-    print(f"\nResponse 2:\n{response2}\n")
+    # Test queue query
+    response2 = grid_chat.process_message("What is the interconnection process?")
+    print(f"\nQueue Response:\n{response2}\n")
     
-    # Another follow-up
-    response3 = grid_chat.process_message("What about in the last week?")
-    print(f"\nResponse 3:\n{response3}\n")
+    # Test general query
+    response3 = grid_chat.process_message("What is global warming?")
+    print(f"\nGeneral Response:\n{response3}\n")
     
     # View conversation history
     history = grid_chat.get_conversation_history()
