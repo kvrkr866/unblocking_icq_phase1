@@ -1,7 +1,7 @@
 """
 ##########################################################
 #
-# Capstone Team 16
+# Capstone Team 16: Power Grids Interconnection Queue Analyzer
 #
 #  Author: RK (kvrkr866@gmail.com)
 #
