@@ -3,7 +3,16 @@
 #
 # Capstone Team 16
 #
-#  Phase1: Iteration 1 - With Memory
+#  Phase1: 
+#     Iteration 1 - 
+#        -- View diagnostic events of the power grid
+#        -- Query support using natural langauge and UI (streamlit)
+#        -- Retrieving of the events from external SQlite DB
+#        -- support of tracing through comet opik
+#        -- Chat history and context support through Memory feature.
+#        -- Tested with minimal set of UT data and generated Evals and measurements.
+#
+#     Iteration 2 -
 #
 ##########################################################
 """
@@ -77,7 +86,7 @@ class GridChat:
         self.tracer = OpikTracer(graph=self.graph.get_graph(xray=True))
     
     ####################################################################
-    def query_prepare(self, state: GridState) -> Dict:
+    def diagevents_query_prepare(self, state: GridState) -> Dict:
         """
         Generate SQL query from natural language user input with context awareness.
         """
@@ -160,7 +169,7 @@ SQL Query:"""
         }
 
     ####################################################################
-    def query_execute(self, state: GridState) -> Dict:
+    def diagevents_query_execute(self, state: GridState) -> Dict:
         """
         Execute the generated SQL query against the database.
         
@@ -203,7 +212,7 @@ SQL Query:"""
             }
 
     ####################################################################
-    def query_results_report(self, state: GridState) -> Dict:
+    def prepare_final_response(self, state: GridState) -> Dict:
         """
         Synthesize final answer from the executed query results with context awareness.
         
@@ -276,15 +285,15 @@ RESPONSE:"""
         workflow_builder = StateGraph(GridState)
         
         # Add nodes
-        workflow_builder.add_node("query_prepare", self.query_prepare)
-        workflow_builder.add_node("query_execute", self.query_execute)
-        workflow_builder.add_node("query_results_report", self.query_results_report)
+        workflow_builder.add_node("diagevents_query_prepare", self.diagevents_query_prepare)
+        workflow_builder.add_node("diagevents_query_execute", self.diagevents_query_execute)
+        workflow_builder.add_node("prepare_final_response", self.prepare_final_response)
         
         # Add edges (simple linear flow)
-        workflow_builder.add_edge(START, "query_prepare")
-        workflow_builder.add_edge("query_prepare", "query_execute")
-        workflow_builder.add_edge("query_execute", "query_results_report")
-        workflow_builder.add_edge("query_results_report", END)
+        workflow_builder.add_edge(START, "diagevents_query_prepare")
+        workflow_builder.add_edge("diagevents_query_prepare", "diagevents_query_execute")
+        workflow_builder.add_edge("diagevents_query_execute", "prepare_final_response")
+        workflow_builder.add_edge("prepare_final_response", END)
         
         # Compile the graph WITH memory
         self.graph = workflow_builder.compile(checkpointer=self.memory)

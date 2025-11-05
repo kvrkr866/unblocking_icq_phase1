@@ -16,7 +16,7 @@ from datetime import datetime
 
 
 class GridChatUI:
-    """Streamlit UI for Power Grid Analyzer system."""
+    """Power Grids Interconnection Queue Analyzer system."""
     
     # Predefined sample questions
     SAMPLE_QUESTIONS = [
@@ -24,7 +24,11 @@ class GridChatUI:
         "What are the different types of events in the system?",
         "List all events with high severity",
         "Count total events by severity level",
-        "Show me critical events in the last week"
+        "Show me critical events in the last week",
+        "I want to connect to CAISO, what is the interconnection process that I should follow?",
+        "I want to connect to the 110 kV level, what are feasible points above that level?",
+        "What are the expected load and generation levels in 2 years and in 5 years in [name of a specific station]?",
+        "I am interested in connecting to station [name of a specific station] in CAISO, what are the planned projects and which interconnection requests are in the queue for that point?"
     ]
     
     def __init__(self):
@@ -46,7 +50,7 @@ class GridChatUI:
     def _initialize_backend(self):
         """Initialize backend components (lazy loading)."""
         if not st.session_state.backend_ready:
-            with st.spinner("🔄 Initializing Power Grid Analyzer backend..."):
+            with st.spinner("🔄 Initializing Power Grids Interconnection Queue Analyzer backend..."):
                 try:
                     import sys
                     import os
@@ -77,8 +81,8 @@ class GridChatUI:
     
     def _render_header(self):
         """Render application header."""
-        st.title("⚡ Power Grid Analyzer")
-        st.caption("Ask questions about your grid diagnostics data in natural language")
+        st.title("⚡ Power Grids Interconnection Queue Analyzer")
+        st.caption("Ask questions about your interconnection queue in natural language")
     
     def _render_sidebar(self):
         """Render sidebar with sample questions and info."""
@@ -289,7 +293,7 @@ class GridChatUI:
         
         # Footer
         st.markdown("<br/>", unsafe_allow_html=True)
-        st.caption("Power Grid Analyzer v1.0 | Capstone Team 16")
+        st.caption("Power Grids Interconnection Queue Analyzer v1.0 | Capstone Team 16")
 
 
 # Custom CSS for better styling
