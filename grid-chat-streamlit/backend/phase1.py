@@ -3,16 +3,7 @@
 #
 # Capstone Team 16
 #
-#  Phase1: 
-#     Iteration 1 - 
-#        -- View diagnostic events of the power grid
-#        -- Query support using natural langauge and UI (streamlit)
-#        -- Retrieving of the events from external SQlite DB
-#        -- support of tracing through comet opik
-#        -- Chat history and context support through Memory feature.
-#        -- Tested with minimal set of UT data and generated Evals and measurements.
-#
-#     Iteration 2 -
+#  Phase1: Iteration 1 - Modular Architecture with Memory
 #
 ##########################################################
 """
@@ -33,8 +24,9 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from opik.integrations.langchain import OpikTracer
 
-from griddiagnostics import gd_userquery_execute
-from prompts import PROMPT_SQL_GENERATION, PROMPT_SYNTHESIS
+# Import modular components
+from diagevents import diagevents_query_prepare, diagevents_query_execute
+from prompts import PROMPT_SYNTHESIS
 
 
 ####################################################################
@@ -52,7 +44,12 @@ class GridState(TypedDict):
 
 ####################################################################
 class GridChat:
-    """Grid Chat main implementation with memory for contextual conversations."""
+    """
+    Grid Chat main orchestrator with memory for contextual conversations.
+    
+    This class coordinates different modules (diagevents, future features)
+    and maintains the conversation flow.
+    """
     
     def __init__(self):
         self.llm = None
@@ -86,135 +83,30 @@ class GridChat:
         self.tracer = OpikTracer(graph=self.graph.get_graph(xray=True))
     
     ####################################################################
-    def diagevents_query_prepare(self, state: GridState) -> Dict:
-        """
-        Generate SQL query from natural language user input with context awareness.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: query_prepare - Generating SQL query with context")
-        print(f"{'='*60}")
-
-        # Extract conversation history
-        messages = state.get("messages", [])
-        
-        # Get the latest user message
-        if isinstance(messages, list) and len(messages) > 0:
-            last_msg = messages[-1]
-            if isinstance(last_msg, BaseMessage):
-                user_input = last_msg.content
-            elif isinstance(last_msg, dict):
-                user_input = last_msg.get("content", "")
-            else:
-                user_input = str(last_msg)
-        else:
-            user_input = str(messages)
-
-        print(f"User query: {user_input}")
-        
-        # Get recent message history (last 3 exchanges for context)
-        recent_history = ""
-        if len(messages) > 1:
-            history_messages = messages[-6:-1] if len(messages) > 6 else messages[:-1]
-            history_lines = []
-            for msg in history_messages:
-                if isinstance(msg, HumanMessage):
-                    history_lines.append(f"User: {msg.content}")
-                elif isinstance(msg, AIMessage):
-                    history_lines.append(f"Assistant: {msg.content[:100]}...")  # Truncate long responses
-            if history_lines:
-                recent_history = "\n\nRECENT CONVERSATION:\n" + "\n".join(history_lines) + "\n"
-        
-        # Build context-aware prompt with conversation context
-        conversation_context = state.get("conversation_context", "")
-        context_section = ""
-        if conversation_context:
-            context_section = f"\n\nCONVERSATION CONTEXT:\n{conversation_context}\n"
-        
-        # Build the complete SQL generation prompt
-        sql_generation_prompt = f"""{PROMPT_SQL_GENERATION}
-{recent_history}
-{context_section}
-CURRENT USER QUESTION: {user_input}
-
-IMPORTANT: If the current question refers to previous queries (using words like "those", "that", "same", "previous"), 
-use the context above to understand what the user is referring to.
-
-SQL Query:"""
-        
-        # Model invocation with conversation history
-        response = self.llm.invoke([
-            SystemMessage(content="You are a SQL query generator expert who understands context from previous conversations."),
-            HumanMessage(content=sql_generation_prompt)
-        ])
-        
-        # Extract SQL query
-        sql_query = response.content.strip()
-        
-        # Clean up markdown code blocks if present
-        if sql_query.startswith("```"):
-            lines = sql_query.split("\n")
-            sql_query = "\n".join([line for line in lines if not line.startswith("```")])
-            sql_query = sql_query.strip()
-        
-        # Check "sql" or "SQL" keyword if it appears at start
-        if sql_query.lower().startswith("sql"):
-            sql_query = sql_query[3:].strip()
-        
-        print(f"\nGenerated SQL Query:\n{sql_query}\n")
-        
-        # Return proper state update
-        return {
-            "sql_query": sql_query,
-            "user_query": user_input
-        }
-
+    # Wrapper methods for modular functions
     ####################################################################
-    def diagevents_query_execute(self, state: GridState) -> Dict:
+    
+    def wrapper_diagevents_query_prepare(self, state: GridState) -> Dict:
         """
-        Execute the generated SQL query against the database.
-        
-        Improvements:
-        - Proper error handling
-        - Better logging
-        - Handle empty results
+        Wrapper for diagevents_query_prepare.
+        This allows easy swapping of modules in the future.
         """
-        print(f"\n{'='*60}")
-        print("NODE: query_execute - Executing SQL query")
-        print(f"{'='*60}")
-        
-        sql_query = state.get('sql_query', '')
-        
-        if not sql_query:
-            print("ERROR: No SQL query found in state")
-            return {
-                "query_raw_resp": [],
-                "messages": state["messages"]
-            }
-        
-        print(f"Executing: {sql_query}")
-        
-        try:
-            # Execute the query
-            query_raw_resp = gd_userquery_execute(sql_query)
-            
-            if query_raw_resp:
-                print(f"✓ Query executed successfully - {len(query_raw_resp)} rows returned")
-            else:
-                print("ℹ Query executed successfully - No rows returned")
-            
-            return {"query_raw_resp": query_raw_resp}
-            
-        except Exception as e:
-            print(f"ERROR executing query: {str(e)}")
-            return {
-                "query_raw_resp": [],
-                "messages": state["messages"]
-            }
-
+        return diagevents_query_prepare(state, self.llm)
+    
+    def wrapper_diagevents_query_execute(self, state: GridState) -> Dict:
+        """
+        Wrapper for diagevents_query_execute.
+        This allows easy swapping of modules in the future.
+        """
+        return diagevents_query_execute(state)
+    
     ####################################################################
     def prepare_final_response(self, state: GridState) -> Dict:
         """
         Synthesize final answer from the executed query results with context awareness.
+        
+        This is a common function that will be used across all features.
+        It takes query results and generates a natural language response.
         
         Improvements:
         - Better formatting of results
@@ -223,7 +115,7 @@ SQL Query:"""
         - Proper message construction
         """
         print(f"\n{'='*60}")
-        print("NODE: query_results_report - Generating final response")
+        print("NODE: prepare_final_response - Generating final response")
         print(f"{'='*60}")
 
         query_raw_resp = state.get('query_raw_resp', [])
@@ -280,19 +172,25 @@ RESPONSE:"""
 
     ####################################################################
     def _build_graph(self) -> None:
-        """Build the LangGraph workflow with memory."""
+        """
+        Build the LangGraph workflow with memory.
+        
+        This is the orchestration layer that connects different modules.
+        Easy to extend with new features by adding new nodes and edges.
+        """
         
         workflow_builder = StateGraph(GridState)
         
-        # Add nodes
-        workflow_builder.add_node("diagevents_query_prepare", self.diagevents_query_prepare)
-        workflow_builder.add_node("diagevents_query_execute", self.diagevents_query_execute)
+        # Add nodes - using modular functions
+        workflow_builder.add_node("wrapper_diagevents_query_prepare", self.wrapper_diagevents_query_prepare)
+        workflow_builder.add_node("wrapper_diagevents_query_execute", self.wrapper_diagevents_query_execute)
         workflow_builder.add_node("prepare_final_response", self.prepare_final_response)
         
-        # Add edges (simple linear flow)
-        workflow_builder.add_edge(START, "diagevents_query_prepare")
-        workflow_builder.add_edge("diagevents_query_prepare", "diagevents_query_execute")
-        workflow_builder.add_edge("diagevents_query_execute", "prepare_final_response")
+        # Add edges (simple linear flow for now)
+        # Easy to add conditional routing or parallel execution later
+        workflow_builder.add_edge(START, "wrapper_diagevents_query_prepare")
+        workflow_builder.add_edge("wrapper_diagevents_query_prepare", "wrapper_diagevents_query_execute")
+        workflow_builder.add_edge("wrapper_diagevents_query_execute", "prepare_final_response")
         workflow_builder.add_edge("prepare_final_response", END)
         
         # Compile the graph WITH memory
@@ -309,11 +207,7 @@ RESPONSE:"""
         """
         Process a message using the Grid Chat system with memory.
         
-        FIXED ISSUES:
-        - Proper initial state structure
-        - Better error handling
-        - Cleaner result extraction
-        - Memory persistence across queries
+        This is the main entry point for processing user queries.
         
         Args:
             message: User's question
@@ -399,14 +293,15 @@ RESPONSE:"""
             return error_msg
     
     ####################################################################
+    # Utility methods for memory management
+    ####################################################################
+    
     def clear_memory(self, thread_id: Optional[str] = None):
         """Clear conversation memory for a specific thread."""
         session_id = thread_id or self.thread_id
         config = {"configurable": {"thread_id": session_id}}
         
-        # Clear the checkpoint
         try:
-            # Reset to empty state
             self.graph.update_state(
                 config,
                 {
@@ -422,7 +317,6 @@ RESPONSE:"""
         except Exception as e:
             print(f"Note: Could not clear memory: {str(e)}")
     
-    ####################################################################
     def get_conversation_history(self, thread_id: Optional[str] = None) -> List[BaseMessage]:
         """Get conversation history for a specific thread."""
         session_id = thread_id or self.thread_id
@@ -448,7 +342,7 @@ if __name__ == "__main__":
     
     # Example conversation demonstrating memory
     print("\n" + "="*60)
-    print("TESTING GRID CHAT SYSTEM WITH MEMORY")
+    print("TESTING GRID CHAT SYSTEM WITH MODULAR ARCHITECTURE")
     print("="*60)
     
     # First question
@@ -466,6 +360,3 @@ if __name__ == "__main__":
     # View conversation history
     history = grid_chat.get_conversation_history()
     print(f"\nConversation has {len(history)} messages")
-    
-    # Clear memory if needed
-    # grid_chat.clear_memory()
