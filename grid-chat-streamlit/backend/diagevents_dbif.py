@@ -3,7 +3,9 @@
 #
 # Capstone Team 16
 #
-#  griddiagnostics interface module
+# Author: RK (kvrkr866@gmail.com)
+#
+#  diagevents SQLite3 DB interface module
 #     The purpose of this module is to execute the query on griddiagnostics DB
 #        and sends the results back to the caller. 
 #     The user request will be passed to LLM to prepare the SQL query, the same query

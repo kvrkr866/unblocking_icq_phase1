@@ -5,6 +5,7 @@
 #
 # Diagnostic Events Module
 # Contains query preparation and execution logic
+#   Author: RK (kvrkr866@gmail.com)
 #
 ##########################################################
 """
@@ -12,7 +13,7 @@
 from typing import Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from prompts import PROMPT_SQL_GENERATION
-from griddiagnostics import gd_userquery_execute
+from diagevents_dbif import gd_userquery_execute
 
 
 ####################################################################

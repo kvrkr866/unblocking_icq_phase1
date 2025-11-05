@@ -3,8 +3,19 @@
 #
 # Capstone Team 16
 #
-#  Phase1: Iteration 1 - Modular Architecture with Memory
+#  Author: RK (kvrkr866@gmail.com)
 #
+#  Phase1: 
+#     Iteration 1 - 
+#        -- View diagnostic events of the power grid
+#        -- Query support using natural langauge and UI (streamlit)
+#        -- Retrieving of the events from external SQlite DB
+#        -- support of tracing through comet opik
+#        -- Chat history and context support through Memory feature.
+#        -- Tested with minimal set of UT data and generated Evals and measurements.
+#
+#     Iteration 2 -
+#   
 ##########################################################
 """
 
@@ -207,7 +218,11 @@ RESPONSE:"""
         """
         Process a message using the Grid Chat system with memory.
         
-        This is the main entry point for processing user queries.
+        Changes:
+        - Proper initial state structure
+        - Better error handling
+        - Cleaner result extraction
+        - Memory persistence across queries
         
         Args:
             message: User's question
@@ -317,6 +332,7 @@ RESPONSE:"""
         except Exception as e:
             print(f"Note: Could not clear memory: {str(e)}")
     
+    ####################################################################
     def get_conversation_history(self, thread_id: Optional[str] = None) -> List[BaseMessage]:
         """Get conversation history for a specific thread."""
         session_id = thread_id or self.thread_id

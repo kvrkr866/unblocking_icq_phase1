@@ -2,7 +2,7 @@
 #
 # Capstone Team 16
 #  List of constants used across the project.  
-#
+# Author: RK (kvrkr866@gmail.com)
 
 #######################################################################
 
@@ -14,6 +14,7 @@ TABLE_EVENT = 'event'
 TABLE_SEVERITY  = 'severity'
 TABLE_EVENTSLOG = 'eventslog'
 #### Constants related to Grid Diagnostics  END ########################
+
 
 
 ##########################################################

@@ -5,6 +5,7 @@
 #
 # This module handles all UI-related functionality.
 # It is completely separate from backend logic.
+# Author: RK (kvrkr866@gmail.com)
 ##########################################################
 v27
 """
