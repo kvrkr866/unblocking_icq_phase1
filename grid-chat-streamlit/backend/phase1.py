@@ -37,6 +37,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from opik.integrations.langchain import OpikTracer
 
+
 # Import modular components
 from diagevents import diagevents_query_prepare, diagevents_query_execute
 from pgicq_kb import pgicq_kb_create_n_initialize, pgicq_kb_query, pgicq_resp_validate, pgicq_kb_query_rewrite
@@ -119,7 +120,14 @@ class GridChat:
         print("✓ Graph built successfully")
         
         # Track the graph structure
-        self.tracer = OpikTracer(graph=self.graph.get_graph(xray=True))
+        try:
+            # Fallback to old API
+            self.tracer = OpikTracer(graph=self.graph.get_graph(xray=True))
+            print("✓ Opik tracer initialized (legacy API)")
+        except Exception as e2:
+            print(f"⚠ Opik tracer not available: {e2}")
+            self.tracer = None
+        
     
     ####################################################################
     # Node functions
@@ -402,9 +410,13 @@ RESPONSE:"""
         config = {
             "configurable": {"thread_id": session_id},
             "recursion_limit": 20,  # Increased for RAG validation loops
-            "callbacks": [self.tracer] if self.tracer else []
         }
-        
+
+       # Add tracer as callback if available
+        if self.tracer:
+            config["callbacks"] = [self.tracer]
+            print("✓ Tracing enabled for this query")
+
         # Get current state from memory if it exists
         try:
             current_state = self.graph.get_state(config)
@@ -514,7 +526,122 @@ RESPONSE:"""
         except:
             return []
 
+####################################################################
+    def check_tracer_status(self) -> Dict:
+        """
+        Check if Opik tracing is working.
+        
+        Returns:
+            Dict with tracer status information
+        """
+        status = {
+            "tracer_initialized": self.tracer is not None,
+            "tracer_type": type(self.tracer).__name__ if self.tracer else None,
+            "opik_configured": False,
+            "project_name": None
+        }
+        
+        if self.tracer:
+            try:
+                # Check if Opik is properly configured
+                import opik
+                client = opik.Opik()
+                status["opik_configured"] = True
+                # Get project name if available
+                if hasattr(self.tracer, 'project_name'):
+                    status["project_name"] = self.tracer.project_name
+                print("✓ Opik tracer is active and configured")
+            except Exception as e:
+                status["error"] = str(e)
+                print(f"⚠ Opik tracer initialized but not configured: {e}")
+        else:
+            print("⚠ Opik tracer not initialized")
+        
+        return status
 
+ ####################################################################
+    def test_memory(self, thread_id: Optional[str] = None) -> Dict:
+        """
+        Test if context memory is working properly.
+        
+        Returns:
+            Dict with memory test results
+        """
+        session_id = thread_id or "memory_test_session"
+        
+        print("\n" + "="*60)
+        print("TESTING CONTEXT MEMORY")
+        print("="*60)
+        
+        # Clear any existing memory for this test
+        self.clear_memory(session_id)
+        
+        # Test 1: First query
+        print("\n1. First query: 'Show critical events'")
+        response1 = self.process_message(
+            "Show me all critical events from the last 24 hours",
+            thread_id=session_id
+        )
+        print(f"Response 1 received: {len(response1)} chars")
+        
+        # Check history after first query
+        history1 = self.get_conversation_history(session_id)
+        print(f"History after query 1: {len(history1)} messages")
+        
+        # Test 2: Follow-up query using context
+        print("\n2. Follow-up query: 'How many of those?' (should reference previous)")
+        response2 = self.process_message(
+            "How many of those were power outages?",
+            thread_id=session_id
+        )
+        print(f"Response 2 received: {len(response2)} chars")
+        
+        # Check history after second query
+        history2 = self.get_conversation_history(session_id)
+        print(f"History after query 2: {len(history2)} messages")
+        
+        # Test 3: Another follow-up
+        print("\n3. Another follow-up: 'What about last week?'")
+        response3 = self.process_message(
+            "What about in the last week?",
+            thread_id=session_id
+        )
+        print(f"Response 3 received: {len(response3)} chars")
+        
+        # Final history check
+        history3 = self.get_conversation_history(session_id)
+        print(f"History after query 3: {len(history3)} messages")
+        
+        # Verify memory
+        results = {
+            "memory_enabled": self.memory is not None,
+            "query_1_history_count": len(history1),
+            "query_2_history_count": len(history2),
+            "query_3_history_count": len(history3),
+            "expected_final_count": 6,  # 3 user + 3 assistant messages
+            "actual_final_count": len(history3),
+            "memory_working": len(history3) == 6,
+            "responses": {
+                "response_1_length": len(response1),
+                "response_2_length": len(response2),
+                "response_3_length": len(response3),
+            }
+        }
+        
+        print("\n" + "="*60)
+        print("MEMORY TEST RESULTS")
+        print("="*60)
+        for key, value in results.items():
+            if key != "responses":
+                print(f"{key}: {value}")
+        
+        if results["memory_working"]:
+            print("\n✅ MEMORY IS WORKING CORRECTLY!")
+        else:
+            print(f"\n⚠ MEMORY ISSUE: Expected {results['expected_final_count']} messages, got {results['actual_final_count']}")
+        
+        return results
+        
 ####################################################################
 # USAGE EXAMPLE
 ####################################################################
@@ -524,6 +651,17 @@ if __name__ == "__main__":
     grid_chat = GridChat()
     grid_chat.initialize()
     
+    # Check tracer status
+    print("\n" + "="*60)
+    print("CHECKING OPIK TRACER STATUS")
+    print("="*60)
+    tracer_status = grid_chat.check_tracer_status()
+    for key, value in tracer_status.items():
+        print(f"{key}: {value}")
+
+     # Test memory functionality
+    memory_results = grid_chat.test_memory()
+
     # Example conversation demonstrating different query types
     print("\n" + "="*60)
     print("TESTING GRID CHAT SYSTEM WITH QUERY ROUTING")
@@ -544,3 +682,12 @@ if __name__ == "__main__":
     # View conversation history
     history = grid_chat.get_conversation_history()
     print(f"\nConversation has {len(history)} messages")
+
+    # Final summary
+    print("\n" + "="*60)
+    print("TESTING COMPLETE")
+    print("="*60)
+    print(f"✓ Memory working: {memory_results['memory_working']}")
+    print(f"✓ Tracer initialized: {tracer_status['tracer_initialized']}")
+    print("\nTo view traces, visit: https://www.comet.com/opik")
+    print("="*60)
