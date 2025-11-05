@@ -20,7 +20,7 @@
 import sqlite3
 import datetime
 
-from constants import *
+from constants import SQL_DBNAME_WITH_PATH
 
 
 #######################################################################
@@ -64,7 +64,7 @@ Write SQL queries based on this schema...
 
 ##########################################################
 def gd_userquery_execute(userquery: str):
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(SQL_DBNAME_WITH_PATH)
     c = conn.cursor()
     c.execute(userquery)
     query_response = c.fetchall()

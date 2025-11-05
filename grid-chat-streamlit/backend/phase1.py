@@ -37,20 +37,11 @@ from opik.integrations.langchain import OpikTracer
 
 # Import modular components
 from diagevents import diagevents_query_prepare, diagevents_query_execute
+from pgicq_kb import pgicq_kb_create_n_initialize, pgicq_kb_query, pgicq_resp_validate, pgicq_kb_query_rewrite
+
 from prompts import PROMPT_SYNTHESIS
+from constants import PGICQ_DOCS_FILE_PATHS, Evaluator, Userqueryclassifier, GridState
 
-
-####################################################################
-# Enhanced TypedDict definition for state with memory
-####################################################################
-class GridState(TypedDict):
-    """State for Grid Chat workflow with conversation history."""
-    messages: Annotated[List[BaseMessage], "Conversation history"]
-    user_query: str
-    sql_query: str
-    query_raw_resp: List  # Database results
-    query_final_resp: str
-    conversation_context: str  # Summary of recent conversation
 
 
 ####################################################################
@@ -67,11 +58,21 @@ class GridChat:
         self.graph = None
         self.tracer = None
         self.memory = None
+        self.retriever = None
+        self.vector_store = None
         self.thread_id = "default_session"  # Can be customized per user session
     
     def initialize(self) -> None:
         """Initialize components for Grid chat with memory."""
         from langchain.chat_models import init_chat_model
+        from langchain_openai import OpenAIEmbeddings
+        from langchain_chroma import Chroma
+        from langchain_community.document_loaders import PyPDFLoader
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_core.documents import Document
+        import time
+        from constants import PGICQ_KB_PERSIST_DIRECTORY, PGICQ_KB_COLLECTION_NAME
+
         
         load_dotenv()
         # model name and parameters
@@ -85,6 +86,31 @@ class GridChat:
         # Initialize memory saver
         self.memory = MemorySaver()
         print("✓ Memory initialized")
+
+        # Initialize embeddings
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        print("Embeddings initialized")
+
+        # Initialize vector store
+        self.vector_store = Chroma(
+            embedding_function=embeddings,
+            persist_directory=PGICQ_KB_PERSIST_DIRECTORY,
+            collection_name=PGICQ_KB_COLLECTION_NAME, 
+        )
+
+        # Check if we need to load documents
+        has_existing_documents = len(self.vector_store.get(limit=1)['ids']) > 0
+        if has_existing_documents:
+            print(" PGICQ KB related Chroma Vector DB found - reusing existing embeddings.")
+        else:
+            print("No PGICQ KB related Chroma Vector ChromaDB found - processing and embedding documents...")
+            docs = pgicq_kb_create_n_initialize()
+            print(f"Loaded and chunked {len(docs)} document pieces")
+            self.vector_store.add_documents(docs)
+            print("Embeddings processed and stored in ChromaDB.")
+        
+        print("✓ PGICQ KB (Chroma Vector DB) initialized")
+
         
         # Build the graph
         self._build_graph()
@@ -96,21 +122,79 @@ class GridChat:
     ####################################################################
     # Wrapper methods for modular functions
     ####################################################################
-    
-    def wrapper_diagevents_query_prepare(self, state: GridState) -> Dict:
+    def w_diagevents_query_prepare(self, state: GridState) -> Dict:
         """
         Wrapper for diagevents_query_prepare.
         This allows easy swapping of modules in the future.
         """
         return diagevents_query_prepare(state, self.llm)
     
-    def wrapper_diagevents_query_execute(self, state: GridState) -> Dict:
+    def w_diagevents_query_execute(self, state: GridState) -> Dict:
         """
         Wrapper for diagevents_query_execute.
         This allows easy swapping of modules in the future.
         """
         return diagevents_query_execute(state)
     
+    def w_pgicq_kb_create_n_initialize():
+        """wrapper to perform PGICQ RAG KB initialize (RAG)"""
+        return pgicq_kb_create_n_initialize()
+
+    def w_pgicq_kb_query(self, state: GridState) -> Dict:
+        """wrapper to perform query on power grid interconnection queue KB (RAG)"""
+        return pgicq_kb_query(state, self.retriever, self.vector_store)
+
+    def w_pgicq_resp_validate(self, state: GridState) -> str:
+            """wrapper to perform validation check on received response from RAG """
+            return pgicq_resp_validate(state, self.retriever, self.llm)
+
+    def w_pgicq_kb_query_rewrite(self, state: GridState) -> Dict:
+            """wrapper to perform query rewrite on ower grid interconnection queue initial query """
+            return pgicq_kb_query_rewrite(state, self.llm)
+
+    ####################################################################
+    # routing methods for lang graph conditional nodes 
+    ####################################################################
+    def route_userquery(state: GridState) -> Literal["w_diagevents_query_prepare", "queue", "prepare_final_response"]:
+        """
+        Conditional router: on user query decides the next node based on doc_type.
+        """
+
+        userquery_type = state.get("userquery_type", "").lower()
+        if userquery_type == "diagnostics":
+            print("User requested - diagnostics event data")
+            return "w_diagevents_query_prepare"
+        elif userquery_type == "queue":
+            print("User requested - grid interconnection queue info")
+            return "w_pgicq_kb_query"
+        elif userquery_type == "general":
+            print("User requested - General information going to final response")
+            return "prepare_final_response" 
+        else:
+            print("User requested - Unable to classify user request, forcing to final resp ")
+            return "prepare_final_response" 
+        
+    def pgicq_resp_evaluator(state: GridState) -> Literal["prepare_final_response", "w_pgicq_kb_query_rewrite"]:
+        """
+        Conditional router: decides the next node based on relevane check on RAG respone.
+        """
+        # Safety: limit iterations
+        count = state.get("iteration_count", 0)
+        if count >= 3:
+            print("Max iterations reached - moving to synthesizer")
+            return "synthesizer"
+        
+        state["iteration_count"] = count + 1
+        
+        decision = state.get("evaluator_decision", "").lower()
+        if decision == "yes":
+            print("Satisfied with answer - moving to final response")
+            return "prepare_final_response"
+        else:
+            print("Not satisfied - rewriting query")
+            return "w_pgicq_kb_query_rewrite"
+
+
     ####################################################################
     def prepare_final_response(self, state: GridState) -> Dict:
         """
@@ -193,17 +277,50 @@ RESPONSE:"""
         workflow_builder = StateGraph(GridState)
         
         # Add nodes - using modular functions
-        workflow_builder.add_node("wrapper_diagevents_query_prepare", self.wrapper_diagevents_query_prepare)
-        workflow_builder.add_node("wrapper_diagevents_query_execute", self.wrapper_diagevents_query_execute)
+        workflow_builder.add_node("userquery_classifier", self.userquery_classifier)
+
+
+        workflow_builder.add_node("w_diagevents_query_prepare", self.w_diagevents_query_prepare)
+        workflow_builder.add_node("w_diagevents_query_execute", self.w_diagevents_query_execute)
+        
+        workflow_builder.add_node("w_pgicq_kb_query", self.w_pgicq_kb_query)
+        workflow_builder.add_node("w_pgicq_resp_validate", self.w_pgicq_resp_validate)
+        workflow_builder.add_node("w_pgicq_kb_query_rewrite", self.w_pgicq_kb_query_rewrite)
+
         workflow_builder.add_node("prepare_final_response", self.prepare_final_response)
         
         # Add edges (simple linear flow for now)
-        # Easy to add conditional routing or parallel execution later
-        workflow_builder.add_edge(START, "wrapper_diagevents_query_prepare")
-        workflow_builder.add_edge("wrapper_diagevents_query_prepare", "wrapper_diagevents_query_execute")
-        workflow_builder.add_edge("wrapper_diagevents_query_execute", "prepare_final_response")
+        workflow_builder.add_edge(START, "userquery_classifier")
+        # Define the Conditional Edges:
+        workflow_builder.add_conditional_edges(
+            "userquery_classifier",       # Source node
+            self.route_userquery,   # Function to call to determine the next node
+            {                 # Mapping of the function's return value to the next node
+                "diagnostics": "w_diagevents_query_prepare",
+                "queue": "w_pgicq_kb_query",
+                "other": "prepare_final_response", # NEW MAPPING
+                END: END
+            }
+        )
+
+        workflow_builder.add_edge("w_diagevents_query_prepare", "w_diagevents_query_execute")
+        workflow_builder.add_edge("w_diagevents_query_execute", "prepare_final_response")
+
+        workflow_builder.add_edge("w_pgicq_kb_query", "w_pgicq_resp_validate")
+        # Define the Conditional Edges:
+        workflow_builder.add_conditional_edges(
+            "w_pgicq_resp_validate",       # Source node
+            self.pgicq_resp_validate_should_end,   # Function to call to determine the next node
+            {                 # Mapping of the function's return value to the next node
+                "yes": "prepare_final_response",
+                "no": "w_pgicq_kb_query_rewrite",
+                END: END
+            }
+        )
+
+        workflow_builder.add_edge("w_pgicq_kb_query_rewrite", "w_pgicq_kb_query")
         workflow_builder.add_edge("prepare_final_response", END)
-        
+
         # Compile the graph WITH memory
         self.graph = workflow_builder.compile(checkpointer=self.memory)
         print("✓ Graph compiled successfully with memory support")
