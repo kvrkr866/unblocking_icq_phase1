@@ -6,6 +6,55 @@
 #
 
 #######################################################################
+from langchain_core.prompts import ChatPromptTemplate
+
+# Classifier prompt
+USERQUERY_CLASSIFIER_PROMPT = ChatPromptTemplate.from_template("""
+Classify the given user question into one of the specified categories based on its nature.
+
+- diagnostics Questions: Questions related diagnostics events consists of severity or event or events list etc.  like "What are the different types of severities..?" or "List of events by severity...?" or "count of events" should be classified as 'diagnostics'.
+- queue Questions: Questions related to power grid interconnection queue like "What is interconnection process...?" or "requests at queue ...?" or "to connect to the 110 kV level, what are feasible points above that leve..?" should be classified as 'queue'.
+
+If the question does not fit into any of these categories, return 'general'.
+
+# Steps
+
+1. Analyze the user question.
+2. Determine which category the question fits into based on its structure and keywords.
+3. Return the corresponding category or 'general' if none apply.
+
+# Output Format
+
+- Return only the category word: 'diagnostics', 'queue', 'general'.
+- Do not include any extra text or quotes in the output.
+
+# Examples
+
+- **Example 1**
+* Question: I want to connect to CAISO, what is the interconnection process that I should follow?  
+* Response: queue
+
+- **Example 2**  
+* Question: What are the expected load and generation levels in 2 years and in 5 years in [name of a specific station]?  
+* Response: queue
+
+
+- **Example 3**  
+* Question: List all events with high severity?  
+* Response: diagnostics
+
+                                                               
+- **Example 4**  
+* Question: Show me critical events in the last week?  
+* Response: diagnostics
+
+                                                               
+- **Example 5**  
+* Question: What is impact of gloabl warming in next 2 to 5 years?  
+* Response: general
+
+User question: {question}
+""")
 
 
 ##########################################################################

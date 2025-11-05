@@ -39,7 +39,7 @@ from opik.integrations.langchain import OpikTracer
 from diagevents import diagevents_query_prepare, diagevents_query_execute
 from pgicq_kb import pgicq_kb_create_n_initialize, pgicq_kb_query, pgicq_resp_validate, pgicq_kb_query_rewrite
 
-from prompts import PROMPT_SYNTHESIS
+from prompts import PROMPT_SYNTHESIS, USERQUERY_CLASSIFIER_PROMPT
 from constants import PGICQ_DOCS_FILE_PATHS, Evaluator, Userqueryclassifier, GridState
 
 
@@ -72,6 +72,7 @@ class GridChat:
         from langchain_core.documents import Document
         import time
         from constants import PGICQ_KB_PERSIST_DIRECTORY, PGICQ_KB_COLLECTION_NAME
+
 
         
         load_dotenv()
@@ -122,6 +123,31 @@ class GridChat:
     ####################################################################
     # Wrapper methods for modular functions
     ####################################################################
+    def userquery_classifier(self, state: GridState)-> Literal["diagnostics", "queue", "general"]:
+        """Determine classification of user query into diagnostics or queue or general """
+        print("Entered in userquery_classifier")
+        
+        # Get original query and agent's last response
+        user_query = state["messages"][0].content if state["messages"] else ""
+
+        
+        classifier_chain = USERQUERY_CLASSIFIER_PROMPT | self.llm | StrOutputParser()
+        userquery_type = classifier_chain.invoke({"question": state["user_query"]}).strip().lower()
+        
+        # Ensure category is valid
+        valid_categories = ["diagnostics", "queue", "general"]
+        if userquery_type not in valid_categories:
+            userquery_type = "general"
+        
+        print(f"Question: {state['user_query']}, Category: {userquery_type}")
+        
+        return {
+            **state,
+            "userquery_type": userquery_type
+        }
+ 
+
+
     def w_diagevents_query_prepare(self, state: GridState) -> Dict:
         """
         Wrapper for diagevents_query_prepare.

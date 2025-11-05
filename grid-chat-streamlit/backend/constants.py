@@ -39,7 +39,7 @@ PGICQ_DOCS_FILE_PATHS = [
     osp.join(BASE_DIR, "revised-draft-2024-2025-transmission-plan.pdf"),
     osp.join(BASE_DIR, "Nov_2023_Changes_to_RIOO_IS.pdf"),
     osp.join(BASE_DIR, "Resource_Registration_Guide_v5.5_110119.pdf"),
-    osp.join(BASE_DIR, "RIOO Processes with RIOO-Create.pdf"),
+    osp.join(BASE_DIR, "RIOO_Processes_with_RIOO-Create.pdf"),
 ]
 #### constants of Power grid interconnection Queue RAG Input data - END #####
 
