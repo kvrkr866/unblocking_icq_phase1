@@ -30,15 +30,44 @@ from langgraph.prebuilt import create_react_agent
 from opik.integrations.langchain import OpikTracer
 
 
+from prompts import PROMPT_SYNTHESIS, USERQUERY_CLASSIFIER_PROMPT
+from constants import (
+    PGICQ_DOCS_FILE_PATHS, 
+    Evaluator, 
+    Userqueryclassifier, 
+    GridState,
+    GAP_ANALYSIS_REPORTS_DIR,
+    GAP_ANALYSIS_UPLOAD_DIR
+)
+
+
 # Import modular components
 from diagevents import diagevents_query_prepare, diagevents_query_execute
-from pgicq_kb import pgicq_kb_create_n_initialize, pgicq_kb_query, pgicq_resp_validate, pgicq_kb_query_rewrite
-
-from prompts import PROMPT_SYNTHESIS, USERQUERY_CLASSIFIER_PROMPT
-from constants import PGICQ_DOCS_FILE_PATHS, Evaluator, Userqueryclassifier, GridState
-
 from gap_analysis_docgen import generate_gap_analysis_docx
-from constants import GAP_ANALYSIS_REPORTS_DIR, GAP_ANALYSIS_UPLOAD_DIR
+
+from pgicq_gap_analysis import (
+    pgicq_gap_extract_pdf_and_sections,
+    pgicq_gap_validate_sections,
+    pgicq_gap_identify_modifications,
+    pgicq_gap_find_missing_sections,
+    pgicq_gap_fetch_compliance_requirements,
+    pgicq_gap_fetch_technical_tests,
+    pgicq_gap_analyze_queue_wait,
+    pgicq_gap_assess_risks,
+    pgicq_gap_identify_environmental,
+    pgicq_gap_fetch_diagnostics,
+    pgicq_gap_synthesize_report,
+    pgicq_gap_generate_report_file
+)
+
+from pgicq_kb import (
+    pgicq_rag_initialize,  # NEW
+    pgicq_kb_create_n_initialize, 
+    pgicq_kb_query, 
+    pgicq_resp_validate, 
+    pgicq_kb_query_rewrite
+)
+
 
 ####################################################################
 class GridChat:
@@ -81,29 +110,8 @@ class GridChat:
         self.memory = MemorySaver()
         print("âœ“ Memory initialized")
 
-        # Initialize embeddings and vector store
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        print("âœ“ Embeddings initialized")
-
-        self.vector_store = Chroma(
-            embedding_function=embeddings,
-            persist_directory=PGICQ_KB_PERSIST_DIRECTORY,
-            collection_name=PGICQ_KB_COLLECTION_NAME, 
-        )
-
-        # Load documents if needed
-        has_existing_documents = len(self.vector_store.get(limit=1)['ids']) > 0
-        if has_existing_documents:
-            print("âœ“ PGICQ KB Vector DB found - reusing existing embeddings")
-        else:
-            print("  Loading and embedding documents...")
-            docs = pgicq_kb_create_n_initialize()
-            print(f"  Loaded {len(docs)} document chunks")
-            self.vector_store.add_documents(docs)
-            print("  Embeddings stored in ChromaDB")
-        
-        print("âœ“ PGICQ KB (Chroma Vector DB) initialized")
-
+        # Wrapper for RAG initialization
+        self.vector_store, self.retriever, self.embeddings = pgicq_rag_initialize()
 
         # Build the graph
         self._build_graph()
@@ -468,970 +476,59 @@ RESPONSE:"""
         }
 
     ####################################################################
-    # GAP ANALYSIS NODE FUNCTIONS - START
+    # GAP ANALYSIS WRAPPER METHODS - START
     ####################################################################
-
     def extract_pdf_and_sections(self, state: GridState) -> Dict:
-        """
-        Node 1: Extract text from uploaded PDF and identify sections.
-        
-        Uses pdfplumber for better text extraction quality.
-        Calls LLM to identify document sections and metadata.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: extract_pdf_and_sections")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_EXTRACT_SECTIONS
-        import pdfplumber
-        
-        pdf_path = state.get("uploaded_pdf_path")
-        if not pdf_path:
-            print("ERROR: No PDF path provided")
-            return {
-                "extracted_text": "",
-                "document_sections": {},
-                "document_metadata": {},
-                "progress_percent": 5,
-                "current_step": "PDF extraction failed"
-            }
-        
-        try:
-            # Extract text from PDF
-            print(f"Extracting text from: {pdf_path}")
-            full_text = []
-            
-            with pdfplumber.open(pdf_path) as pdf:
-                for page_num, page in enumerate(pdf.pages, 1):
-                    text = page.extract_text()
-                    if text:
-                        full_text.append(f"[Page {page_num}]\n{text}")
-            
-            extracted_text = "\n\n".join(full_text)
-            print(f"Extracted {len(extracted_text)} characters from {len(full_text)} pages")
-            
-            # Truncate if too long (keep first 50k chars for analysis)
-            if len(extracted_text) > 50000:
-                print("Text too long - truncating to 50k characters")
-                extracted_text_for_llm = extracted_text[:50000]
-            else:
-                extracted_text_for_llm = extracted_text
-            
-            # Call LLM to identify sections
-            print("Identifying document sections with LLM...")
-            section_prompt = PROMPT_EXTRACT_SECTIONS.format(
-                document_text=extracted_text_for_llm
-            )
-            
-            response = self.llm.invoke([
-                SystemMessage(content="You are an expert at analyzing technical documents. Always respond with valid JSON."),
-                HumanMessage(content=section_prompt)
-            ])
-            
-            # Parse JSON response
-            import json
-            try:
-                result = json.loads(response.content)
-                sections = {s["section_name"]: s["content"] for s in result.get("sections", [])}
-                metadata = result.get("metadata", {})
-            except json.JSONDecodeError as e:
-                print(f"JSON parsing error: {e}")
-                # Fallback: treat entire doc as one section
-                sections = {"Full Document": extracted_text_for_llm[:10000]}
-                metadata = {}
-            
-            print(f"Identified {len(sections)} sections")
-            print(f"Metadata: {metadata}")
-            
-            return {
-                "extracted_text": extracted_text,  # Store full text
-                "document_sections": sections,
-                "document_metadata": metadata,
-                "progress_percent": 10,
-                "current_step": "PDF extracted and sections identified"
-            }
-            
-        except Exception as e:
-            print(f"ERROR extracting PDF: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "extracted_text": "",
-                "document_sections": {},
-                "document_metadata": {},
-                "progress_percent": 5,
-                "current_step": f"PDF extraction error: {str(e)}"
-            }
-
-
+        """Wrapper for gap analysis PDF extraction."""
+        return pgicq_gap_extract_pdf_and_sections(state, self.llm)
+    
     def validate_sections_rag(self, state: GridState) -> Dict:
-        """
-        Node 2: Validate document sections against KB requirements.
-        Uses pgicq_kb_query_generic for RAG queries.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: validate_sections_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_VALIDATE_SECTION
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        sections = state.get("document_sections", {})
-        metadata = state.get("document_metadata", {})
-        
-        if not sections:
-            print("No sections to validate")
-            return {
-                "correct_sections": [],
-                "progress_percent": 20,
-                "current_step": "No sections to validate"
-            }
-        
-        correct_sections = []
-        
-        # Validate each section
-        for idx, (section_name, section_content) in enumerate(sections.items(), 1):
-            print(f"\nValidating section {idx}/{len(sections)}: {section_name}")
-            
-            # Query KB for requirements for this section
-            query = f"What are the requirements for the '{section_name}' section in interconnection requests?"
-            kb_results = pgicq_kb_query_generic(
-                query=query,
-                retriever=self.retriever,
-                vector_store=self.vector_store,
-                k=5
-            )
-            
-            if not kb_results:
-                print(f"No KB info found for {section_name}")
-                continue
-            
-            # Format KB results
-            kb_text = "\n\n".join([
-                f"[{doc['filename']}, p. {doc['page']}]\n{doc['content'][:500]}"
-                for doc in kb_results[:3]
-            ])
-            
-            # Call LLM to validate
-            validation_prompt = PROMPT_VALIDATE_SECTION.format(
-                section_name=section_name,
-                section_content=section_content[:1000],  # Truncate content
-                kb_requirements=kb_text
-            )
-            
-            try:
-                response = self.llm.invoke([
-                    SystemMessage(content="You are a compliance expert. Respond with valid JSON only."),
-                    HumanMessage(content=validation_prompt)
-                ])
-                
-                result = json.loads(response.content)
-                
-                if result.get("is_correct"):
-                    correct_sections.append({
-                        "section_name": section_name,
-                        "details": result.get("correctness_details", ""),
-                        "references": result.get("references", [])
-                    })
-                    print(f" {section_name} is correct")
-                else:
-                    print(f"âœ— {section_name} needs review")
-                    
-            except Exception as e:
-                print(f"Error validating {section_name}: {e}")
-        
-        print(f"\nFound {len(correct_sections)} correct sections")
-        
-        return {
-            "correct_sections": correct_sections,
-            "progress_percent": 25,
-            "current_step": f"Validated {len(sections)} sections"
-        }
-
-
+        """Wrapper for gap analysis section validation."""
+        return pgicq_gap_validate_sections(state, self.llm, self.retriever, self.vector_store)
+    
     def identify_modifications_rag(self, state: GridState) -> Dict:
-        """
-        Node 3: Identify sections that need modifications.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: identify_modifications_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_FIND_MODIFICATIONS
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        sections = state.get("document_sections", {})
-        correct_sections = state.get("correct_sections", [])
-        
-        # Get sections that were NOT marked as correct
-        correct_section_names = {s["section_name"] for s in correct_sections}
-        sections_to_check = {
-            name: content for name, content in sections.items()
-            if name not in correct_section_names
-        }
-        
-        if not sections_to_check:
-            print("All sections are correct - no modifications needed")
-            return {
-                "sections_to_modify": [],
-                "progress_percent": 35,
-                "current_step": "No modifications needed"
-            }
-        
-        sections_to_modify = []
-        
-        for section_name, section_content in sections_to_check.items():
-            print(f"\nChecking modifications for: {section_name}")
-            
-            # Query KB
-            query = f"What are the detailed requirements and compliance standards for '{section_name}' in interconnection requests?"
-            kb_results = pgicq_kb_query_generic(
-                query=query,
-                retriever=self.retriever,
-                vector_store=self.vector_store,
-                k=5
-            )
-            
-            if not kb_results:
-                continue
-            
-            kb_text = "\n\n".join([
-                f"[{doc['filename']}, p. {doc['page']}]\n{doc['content'][:500]}"
-                for doc in kb_results[:3]
-            ])
-            
-            # Call LLM
-            mod_prompt = PROMPT_FIND_MODIFICATIONS.format(
-                section_name=section_name,
-                section_content=section_content[:1000],
-                kb_requirements=kb_text
-            )
-            
-            try:
-                response = self.llm.invoke([
-                    SystemMessage(content="You are a compliance expert. Respond with valid JSON only."),
-                    HumanMessage(content=mod_prompt)
-                ])
-                
-                result = json.loads(response.content)
-                
-                if result.get("needs_modification"):
-                    sections_to_modify.append({
-                        "section_name": section_name,
-                        "issues": result.get("issues_found", []),
-                        "recommendations": result.get("recommendations", []),
-                        "references": result.get("references", [])
-                    })
-                    print(f"⚠️ {section_name} needs modifications")
-                    
-            except Exception as e:
-                print(f"Error analyzing {section_name}: {e}")
-        
-        print(f"\nFound {len(sections_to_modify)} sections needing modifications")
-        
-        return {
-            "sections_to_modify": sections_to_modify,
-            "progress_percent": 40,
-            "current_step": f"Identified {len(sections_to_modify)} sections to modify"
-        }
-
-
+        """Wrapper for gap analysis modification identification."""
+        return pgicq_gap_identify_modifications(state, self.llm, self.retriever, self.vector_store)
+    
     def find_missing_sections_rag(self, state: GridState) -> Dict:
-        """
-        Node 4: Find required sections that are missing from document.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: find_missing_sections_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_FIND_MISSING_SECTIONS
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        sections = state.get("document_sections", {})
-        metadata = state.get("document_metadata", {})
-        
-        station = metadata.get("station_name", "unspecified")
-        region = metadata.get("region", "unspecified")
-        country = metadata.get("country", "unspecified")
-        request_type = metadata.get("request_type", "interconnection")
-        
-        print(f"Checking for missing sections for {request_type} request")
-        
-        # Query KB for all required sections
-        query = f"What are all mandatory sections required for {request_type} interconnection requests in {region} {country}?"
-        kb_results = pgicq_kb_query_generic(
-            query=query,
-            retriever=self.retriever,
-            vector_store=self.vector_store,
-            k=10
-        )
-        
-        if not kb_results:
-            print("No KB info about required sections")
-            return {
-                "missing_sections": [],
-                "progress_percent": 50,
-                "current_step": "Could not determine required sections"
-            }
-        
-        kb_text = "\n\n".join([
-            f"[{doc['filename']}, p. {doc['page']}]\n{doc['content'][:800]}"
-            for doc in kb_results[:5]
-        ])
-        
-        # Get list of present sections
-        present_sections = list(sections.keys())
-        
-        # Call LLM
-        missing_prompt = PROMPT_FIND_MISSING_SECTIONS.format(
-            present_sections=", ".join(present_sections),
-            station_name=station,
-            region=region,
-            country=country,
-            request_type=request_type,
-            kb_requirements=kb_text
-        )
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="You are a compliance expert. Respond with valid JSON only."),
-                HumanMessage(content=missing_prompt)
-            ])
-            
-            result = json.loads(response.content)
-            missing_sections = result.get("missing_sections", [])
-            
-            print(f"Found {len(missing_sections)} missing sections")
-            
-            return {
-                "missing_sections": missing_sections,
-                "progress_percent": 55,
-                "current_step": f"Identified {len(missing_sections)} missing sections"
-            }
-            
-        except Exception as e:
-            print(f"Error finding missing sections: {e}")
-            return {
-                "missing_sections": [],
-                "progress_percent": 55,
-                "current_step": "Error finding missing sections"
-            }
-
-
+        """Wrapper for gap analysis missing section identification."""
+        return pgicq_gap_find_missing_sections(state, self.llm, self.retriever, self.vector_store)
+    
     def fetch_compliance_reqs_rag(self, state: GridState) -> Dict:
-        """
-        Node 5: Fetch mandatory compliance requirements from KB.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: fetch_compliance_reqs_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_COMPLIANCE_REQUIREMENTS
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        metadata = state.get("document_metadata", {})
-        station = metadata.get("station_name", "unspecified")
-        region = metadata.get("region", "unspecified")
-        country = metadata.get("country", "unspecified")
-        request_type = metadata.get("request_type", "interconnection")
-        
-        # Query KB
-        query = f"What are the mandatory compliance requirements for {request_type} at {station} in {region}?"
-        kb_results = pgicq_kb_query_generic(
-            query=query,
-            retriever=self.retriever,
-            vector_store=self.vector_store,
-            k=10
-        )
-        
-        if not kb_results:
-            print("No compliance requirements found in KB")
-            return {
-                "compliance_requirements": [],
-                "progress_percent": 60,
-                "current_step": "Not able to find compliance requirements"
-            }
-        
-        kb_text = "\n\n".join([
-            f"[{doc['filename']}, p. {doc['page']}]\n{doc['content']}"
-            for doc in kb_results[:8]
-        ])
-        
-        # Call LLM
-        compliance_prompt = PROMPT_COMPLIANCE_REQUIREMENTS.format(
-            station_name=station,
-            region=region,
-            country=country,
-            request_type=request_type,
-            kb_info=kb_text
-        )
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="You are a compliance expert. Respond with valid JSON only."),
-                HumanMessage(content=compliance_prompt)
-            ])
-            
-            result = json.loads(response.content)
-            
-            if result.get("status") == "Not able to find":
-                print("Not able to find compliance requirements")
-                compliance_reqs = []
-            else:
-                compliance_reqs = result.get("compliance_requirements", [])
-            
-            print(f"Found {len(compliance_reqs)} compliance requirements")
-            
-            return {
-                "compliance_requirements": compliance_reqs,
-                "progress_percent": 65,
-                "current_step": f"Found {len(compliance_reqs)} compliance requirements"
-            }
-            
-        except Exception as e:
-            print(f"Error fetching compliance: {e}")
-            return {
-                "compliance_requirements": [],
-                "progress_percent": 65,
-                "current_step": "Error fetching compliance requirements"
-            }
-
-
+        """Wrapper for fetching compliance requirements."""
+        return pgicq_gap_fetch_compliance_requirements(state, self.retriever, self.vector_store)
+    
     def fetch_technical_tests_rag(self, state: GridState) -> Dict:
-        """
-        Node 6: Fetch technical test requirements from KB.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: fetch_technical_tests_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_TECHNICAL_TESTS
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        metadata = state.get("document_metadata", {})
-        station = metadata.get("station_name", "unspecified")
-        region = metadata.get("region", "unspecified")
-        country = metadata.get("country", "unspecified")
-        request_type = metadata.get("request_type", "interconnection")
-        
-        # Query KB
-        query = f"What technical tests and validation procedures are required for {request_type} at {station}?"
-        kb_results = pgicq_kb_query_generic(
-            query=query,
-            retriever=self.retriever,
-            vector_store=self.vector_store,
-            k=10
-        )
-        
-        if not kb_results:
-            print("No technical tests found in KB")
-            return {
-                "technical_tests": [],
-                "progress_percent": 70,
-                "current_step": "Not able to find technical tests"
-            }
-        
-        kb_text = "\n\n".join([
-            f"[{doc['filename']}, p. {doc['page']}]\n{doc['content']}"
-            for doc in kb_results[:8]
-        ])
-        
-        # Call LLM
-        tests_prompt = PROMPT_TECHNICAL_TESTS.format(
-            station_name=station,
-            region=region,
-            country=country,
-            request_type=request_type,
-            kb_info=kb_text
-        )
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="You are a technical expert. Respond with valid JSON only."),
-                HumanMessage(content=tests_prompt)
-            ])
-            
-            result = json.loads(response.content)
-            
-            if result.get("status") == "Not able to find":
-                print("Not able to find technical tests")
-                tests = []
-            else:
-                tests = result.get("technical_tests", [])
-            
-            print(f"Found {len(tests)} technical tests")
-            
-            return {
-                "technical_tests": tests,
-                "progress_percent": 75,
-                "current_step": f"Found {len(tests)} technical tests"
-            }
-            
-        except Exception as e:
-            print(f"Error fetching tests: {e}")
-            return {
-                "technical_tests": [],
-                "progress_percent": 75,
-                "current_step": "Error fetching technical tests"
-            }
-
+        """Wrapper for fetching technical tests."""
+        return pgicq_gap_fetch_technical_tests(state, self.retriever, self.vector_store)
+    
     def analyze_queue_rag(self, state: GridState) -> Dict:
-        """
-        Node 7: Analyze queue wait time and open requests.
-        Prioritize LATEST document versions.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: analyze_queue_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_QUEUE_WAIT_TIME
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        metadata = state.get("document_metadata", {})
-        station = metadata.get("station_name", "unspecified")
-        region = metadata.get("region", "unspecified")
-        request_type = metadata.get("request_type", "interconnection")
-        
-        # Query KB with emphasis on latest data
-        query = f"Current queue wait time and open interconnection requests at {station} in {region} latest 2024 2025"
-        kb_results = pgicq_kb_query_generic(
-            query=query,
-            retriever=self.retriever,
-            vector_store=self.vector_store,
-            k=10
-        )
-        
-        if not kb_results:
-            print("No queue information found in KB")
-            return {
-                "queue_wait_analysis": {
-                    "status": "Not able to find",
-                    "reason": "No queue data available in knowledge base"
-                },
-                "progress_percent": 80,
-                "current_step": "Not able to find queue information"
-            }
-        
-        # Prioritize documents with recent dates in filename
-        kb_results_sorted = sorted(
-            kb_results,
-            key=lambda x: ("2025" in x['filename'] or "2024" in x['filename']),
-            reverse=True
-        )
-        
-        kb_text = "\n\n".join([
-            f"[{doc['filename']}, p. {doc['page']}]\n{doc['content']}"
-            for doc in kb_results_sorted[:5]
-        ])
-        
-        # Call LLM
-        queue_prompt = PROMPT_QUEUE_WAIT_TIME.format(
-            station_name=station,
-            region=region,
-            request_type=request_type,
-            kb_info=kb_text
-        )
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="You are a queue analyst. Respond with valid JSON only. Prioritize latest information."),
-                HumanMessage(content=queue_prompt)
-            ])
-            
-            result = json.loads(response.content)
-            
-            if result.get("status") == "Not able to find":
-                print("Not able to find queue wait time")
-                queue_analysis = {
-                    "status": "Not able to find",
-                    "reason": result.get("reason", "Information not available")
-                }
-            else:
-                queue_analysis = result.get("queue_info", {})
-                queue_analysis["status"] = "found"
-            
-            print(f"Queue analysis: {queue_analysis.get('status')}")
-            
-            return {
-                "queue_wait_analysis": queue_analysis,
-                "progress_percent": 82,
-                "current_step": "Queue analysis completed"
-            }
-            
-        except Exception as e:
-            print(f"Error analyzing queue: {e}")
-            return {
-                "queue_wait_analysis": {
-                    "status": "Not able to find",
-                    "reason": f"Error: {str(e)}"
-                },
-                "progress_percent": 82,
-                "current_step": "Error analyzing queue"
-            }
-
-
+        """Wrapper for queue wait analysis."""
+        return pgicq_gap_analyze_queue_wait(state, self.retriever, self.vector_store)
+    
     def assess_risks_rag(self, state: GridState) -> Dict:
-        """
-        Node 8: Assess risks from KB.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: assess_risks_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_RISK_ASSESSMENT
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        metadata = state.get("document_metadata", {})
-        station = metadata.get("station_name", "unspecified")
-        region = metadata.get("region", "unspecified")
-        country = metadata.get("country", "unspecified")
-        request_type = metadata.get("request_type", "interconnection")
-        
-        # Query KB for risks
-        query = f"What are the risks and challenges for {request_type} interconnection at {station} in {region}?"
-        kb_results = pgicq_kb_query_generic(
-            query=query,
-            retriever=self.retriever,
-            vector_store=self.vector_store,
-            k=10
-        )
-        
-        if not kb_results:
-            print("No risk information found in KB")
-            return {
-                "risk_assessment": [],
-                "progress_percent": 85,
-                "current_step": "No risk information found"
-            }
-        
-        kb_text = "\n\n".join([
-            f"[{doc['filename']}, p. {doc['page']}]\n{doc['content']}"
-            for doc in kb_results[:8]
-        ])
-        
-        # Call LLM
-        risk_prompt = PROMPT_RISK_ASSESSMENT.format(
-            station_name=station,
-            region=region,
-            country=country,
-            request_type=request_type,
-            kb_info=kb_text
-        )
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="You are a risk assessment expert. Respond with valid JSON only."),
-                HumanMessage(content=risk_prompt)
-            ])
-            
-            result = json.loads(response.content)
-            risks = result.get("risks", [])
-            
-            print(f"Found {len(risks)} risks")
-            
-            return {
-                "risk_assessment": risks,
-                "progress_percent": 87,
-                "current_step": f"Identified {len(risks)} risks"
-            }
-            
-        except Exception as e:
-            print(f"Error assessing risks: {e}")
-            return {
-                "risk_assessment": [],
-                "progress_percent": 87,
-                "current_step": "Error assessing risks"
-            }
-
-
+        """Wrapper for risk assessment."""
+        return pgicq_gap_assess_risks(state, self.retriever, self.vector_store)
+    
     def identify_environmental_rag(self, state: GridState) -> Dict:
-        """
-        Node 9: Identify environmental challenges and requirements.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: identify_environmental_rag")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_ENVIRONMENTAL_CHALLENGES
-        from pgicq_kb import pgicq_kb_query_generic
-        import json
-        
-        metadata = state.get("document_metadata", {})
-        station = metadata.get("station_name", "unspecified")
-        region = metadata.get("region", "unspecified")
-        country = metadata.get("country", "unspecified")
-        request_type = metadata.get("request_type", "interconnection")
-        
-        # Query KB
-        query = f"What are the environmental requirements and challenges for {request_type} at {station} in {region}?"
-        kb_results = pgicq_kb_query_generic(
-            query=query,
-            retriever=self.retriever,
-            vector_store=self.vector_store,
-            k=10
-        )
-        
-        if not kb_results:
-            print("No environmental information found in KB")
-            return {
-                "environmental_challenges": [],
-                "progress_percent": 90,
-                "current_step": "No environmental information found"
-            }
-        
-        kb_text = "\n\n".join([
-            f"[{doc['filename']}, p. {doc['page']}]\n{doc['content']}"
-            for doc in kb_results[:8]
-        ])
-        
-        # Call LLM
-        env_prompt = PROMPT_ENVIRONMENTAL_CHALLENGES.format(
-            station_name=station,
-            region=region,
-            country=country,
-            request_type=request_type,
-            kb_info=kb_text
-        )
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="You are an environmental compliance expert. Respond with valid JSON only."),
-                HumanMessage(content=env_prompt)
-            ])
-            
-            result = json.loads(response.content)
-            challenges = result.get("environmental_challenges", [])
-            
-            print(f"Found {len(challenges)} environmental challenges")
-            
-            return {
-                "environmental_challenges": challenges,
-                "progress_percent": 92,
-                "current_step": f"Identified {len(challenges)} environmental challenges"
-            }
-            
-        except Exception as e:
-            print(f"Error identifying environmental: {e}")
-            return {
-                "environmental_challenges": [],
-                "progress_percent": 92,
-                "current_step": "Error identifying environmental challenges"
-            }
-
-
+        """Wrapper for environmental challenge identification."""
+        return pgicq_gap_identify_environmental(state, self.retriever, self.vector_store)
+    
     def fetch_diagnostics_for_gap(self, state: GridState) -> Dict:
-        """
-        Node 10: Fetch diagnostic events from database.
-        NO ANALYSIS - just retrieve and list events.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: fetch_diagnostics_for_gap")
-        print(f"{'='*60}")
-        
-        from diagevents_dbif import gd_userquery_execute
-        
-        metadata = state.get("document_metadata", {})
-        station = metadata.get("station_name", "")
-        
-        # FUTURE: Filter by station when station column available in DB
-        # For now: Get all recent events
-        
-        if station and station != "unspecified":
-            print(f"FUTURE: Will filter by station: {station}")
-            print("CURRENT: Fetching all recent events (station filter not yet implemented)")
-        
-        sql_query = """
-    SELECT e.event_id, e.event_name, e.event_type, 
-        s.severity_name, l.timestamp, l.status
-    FROM eventslog l
-    JOIN event e ON l.event_id = e.event_id
-    LEFT JOIN severity s ON l.severity_id = s.severity_id
-    WHERE l.timestamp >= datetime('now', '-6 months')
-    ORDER BY l.timestamp DESC
-    LIMIT 50;
-    """
-        
-        try:
-            diagnostics_results = gd_userquery_execute(sql_query)
-            
-            # Format for report (no analysis)
-            diagnostics_list = []
-            for row in diagnostics_results:
-                diagnostics_list.append({
-                    "event_id": row[0],
-                    "event_name": row[1],
-                    "event_type": row[2],
-                    "severity": row[3],
-                    "timestamp": row[4],
-                    "status": row[5]
-                })
-            
-            print(f"Retrieved {len(diagnostics_list)} diagnostic events")
-            
-            return {
-                "station_diagnostics": diagnostics_list,
-                "progress_percent": 95,
-                "current_step": f"Retrieved {len(diagnostics_list)} diagnostic events"
-            }
-            
-        except Exception as e:
-            print(f"Error fetching diagnostics: {e}")
-            return {
-                "station_diagnostics": [],
-                "progress_percent": 95,
-                "current_step": "Error fetching diagnostics"
-            }
-
-
+        """Wrapper for fetching diagnostic events."""
+        return pgicq_gap_fetch_diagnostics(state)
+    
     def synthesize_gap_report(self, state: GridState) -> Dict:
-        """
-        Node 11: Synthesize all findings into comprehensive report content.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: synthesize_gap_report")
-        print(f"{'='*60}")
-        
-        from prompts import PROMPT_GAP_REPORT_SYNTHESIS
-        import json
-        
-        # Gather all findings
-        metadata = state.get("document_metadata", {})
-        sections = state.get("document_sections", {})
-        correct_sections = state.get("correct_sections", [])
-        sections_to_modify = state.get("sections_to_modify", [])
-        missing_sections = state.get("missing_sections", [])
-        compliance_reqs = state.get("compliance_requirements", [])
-        technical_tests = state.get("technical_tests", [])
-        queue_analysis = state.get("queue_wait_analysis", {})
-        risks = state.get("risk_assessment", [])
-        env_challenges = state.get("environmental_challenges", [])
-        diagnostics = state.get("station_diagnostics", [])
-        
-        # Format for prompt
-        def format_list(items):
-            if not items:
-                return "None found"
-            return json.dumps(items, indent=2)
-        
-        # Create comprehensive prompt
-        report_prompt = PROMPT_GAP_REPORT_SYNTHESIS.format(
-            document_sections=", ".join(sections.keys()) if sections else "None",
-            station_name=metadata.get("station_name", "Unspecified"),
-            region=metadata.get("region", "Unspecified"),
-            request_type=metadata.get("request_type", "Unspecified"),
-            correct_sections=format_list(correct_sections),
-            sections_to_modify=format_list(sections_to_modify),
-            missing_sections=format_list(missing_sections),
-            compliance_requirements=format_list(compliance_reqs),
-            technical_tests=format_list(technical_tests),
-            queue_wait_analysis=json.dumps(queue_analysis, indent=2),
-            risk_assessment=format_list(risks),
-            environmental_challenges=format_list(env_challenges),
-            station_diagnostics=f"{len(diagnostics)} events retrieved (details in report)"
-        )
-        
-        try:
-            print("Generating comprehensive gap analysis report...")
-            
-            response = self.llm.invoke([
-                SystemMessage(content="You are an expert technical writer specializing in interconnection compliance reports."),
-                HumanMessage(content=report_prompt)
-            ])
-            
-            report_content = response.content
-            
-            print(f"Generated report: {len(report_content)} characters")
-            
-            return {
-                "gap_report_content": report_content,
-                "progress_percent": 98,
-                "current_step": "Report synthesized"
-            }
-            
-        except Exception as e:
-            print(f"Error synthesizing report: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Create fallback simple report
-            fallback_report = f"""# GAP ANALYSIS REPORT
-            
-    ## ERROR
-    Report synthesis failed: {str(e)}
-
-    ## Raw Findings:
-    - Correct sections: {len(correct_sections)}
-    - Sections to modify: {len(sections_to_modify)}
-    - Missing sections: {len(missing_sections)}
-    - Compliance requirements: {len(compliance_reqs)}
-    - Technical tests: {len(technical_tests)}
-    - Risks: {len(risks)}
-    - Environmental: {len(env_challenges)}
-    - Diagnostic events: {len(diagnostics)}
-    """
-            
-            return {
-                "gap_report_content": fallback_report,
-                "progress_percent": 98,
-                "current_step": "Report synthesis error - fallback generated"
-            }
-
-
+        """Wrapper for report synthesis."""
+        return pgicq_gap_synthesize_report(state, self.llm)
+    
     def generate_gap_report_file(self, state: GridState) -> Dict:
-        """
-        Node 12: Generate DOCX file from report content.
-        """
-        print(f"\n{'='*60}")
-        print("NODE: generate_gap_report_file")
-        print(f"{'='*60}")
-        
-        from gap_analysis_docgen import generate_gap_analysis_docx
-        from constants import GAP_ANALYSIS_REPORTS_DIR
-        
-        report_content = state.get("gap_report_content", "")
-        metadata = state.get("document_metadata", {})
-        
-        if not report_content:
-            print("ERROR: No report content to generate file")
-            return {
-                "gap_report_path": None,
-                "progress_percent": 100,
-                "current_step": "Error: No report content"
-            }
-        
-        try:
-            # Generate DOCX
-            docx_path = generate_gap_analysis_docx(
-                gap_report_content=report_content,
-                document_metadata=metadata,
-                output_dir=GAP_ANALYSIS_REPORTS_DIR
-            )
-            
-            print(f"Report generated: {docx_path}")
-            
-            return {
-                "gap_report_path": docx_path,
-                "progress_percent": 100,
-                "current_step": "Report generated successfully"
-            }
-            
-        except Exception as e:
-            print(f"Error generating report file: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            return {
-                "gap_report_path": None,
-                "progress_percent": 100,
-                "current_step": f"Error generating file: {str(e)}"
-            }
+        """Wrapper for report file generation."""
+        return pgicq_gap_generate_report_file(state)
+
+    ####################################################################
+    # GAP ANALYSIS WRAPPER METHODS - END 
+    ####################################################################
 
     def process_gap_analysis(
         self,

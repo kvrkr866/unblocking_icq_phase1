@@ -24,12 +24,74 @@
 """
 import json
 import os.path as osp
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
-from constants import PGICQ_DOCS_FILE_PATHS, Evaluator, Userqueryclassifier, GridState
+from constants import (
+    PGICQ_DOCS_FILE_PATHS, 
+    Evaluator, 
+    Userqueryclassifier, 
+    GridState,
+    PGICQ_KB_PERSIST_DIRECTORY,
+    PGICQ_KB_COLLECTION_NAME
+)
+     
 from prompts import PROMPT_SYNTHESIS
 
 
+####################################################################
+def pgicq_rag_initialize():
+    """
+    Initialize RAG components (vector store, embeddings, retriever).
+    
+    This function should be called ONCE during system initialization.
+    The returned components are then shared across all RAG queries
+    (both queue queries and gap analysis).
+    
+    Returns:
+        tuple: (vector_store, retriever, embeddings)
+    """
+    from langchain_openai import OpenAIEmbeddings
+    from langchain_chroma import Chroma
+    
+    print("\n" + "="*60)
+    print("INITIALIZING RAG COMPONENTS (Single Source)")
+    print("="*60)
+    
+    # Initialize embeddings
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    print("✓ Embeddings initialized")
+    
+    # Initialize vector store
+    vector_store = Chroma(
+        embedding_function=embeddings,
+        persist_directory=PGICQ_KB_PERSIST_DIRECTORY,
+        collection_name=PGICQ_KB_COLLECTION_NAME,
+    )
+    
+    # Check if documents already exist
+    has_existing_documents = len(vector_store.get(limit=1)['ids']) > 0
+    
+    if has_existing_documents:
+        print("✓ PGICQ KB Vector DB found - reusing existing embeddings")
+    else:
+        print("  Loading and embedding documents...")
+        docs = pgicq_kb_create_n_initialize()
+        print(f"  Loaded {len(docs)} document chunks")
+        vector_store.add_documents(docs)
+        print("  Embeddings stored in ChromaDB")
+    
+    # Create retriever (optional - can use vector_store directly)
+    retriever = vector_store.as_retriever(
+        search_type="mmr",  # Maximal Marginal Relevance
+        search_kwargs={"k": 10, "fetch_k": 20}
+    )
+    print("✓ Retriever initialized")
+    
+    print("="*60)
+    print("RAG INITIALIZATION COMPLETE")
+    print("="*60 + "\n")
+    
+    return vector_store, retriever, embeddings
 
 ####################################################################
 def pgicq_kb_create_n_initialize():

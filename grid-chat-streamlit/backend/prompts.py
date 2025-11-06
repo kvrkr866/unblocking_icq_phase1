@@ -145,7 +145,7 @@ RESPOND ONLY WITH VALID JSON."""
 
 ##########################################################################
 # Section Validation
-PROMPT_VALIDATE_SECTION = """You are an interconnection compliance expert reviewing document sections.
+PROMPT_VALIDATE_SECTIONS = """You are an interconnection compliance expert reviewing document sections.
 
 SECTION TO VALIDATE:
 Section Name: {section_name}
