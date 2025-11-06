@@ -88,7 +88,7 @@ def pgicq_kb_query(state: Dict, retriever, vector_store) -> Dict:
     if not user_query:
         print("ERROR: No user query found in state")
         return {
-            "query_raw_resp": [],
+            "queue_raw_resp": [],  # Changed from query_raw_resp
             "messages": state.get("messages", [])
         }
     
@@ -119,14 +119,15 @@ def pgicq_kb_query(state: Dict, retriever, vector_store) -> Dict:
             for idx, doc in enumerate(docs, 1)
         ]
         
+        # Return as queue_raw_resp for sequential flow
         return {
-            "query_raw_resp": formatted_docs
+            "queue_raw_resp": formatted_docs  # Changed from query_raw_resp
         }
         
     except Exception as e:
         print(f"ERROR retrieving documents: {str(e)}")
         return {
-            "query_raw_resp": [],
+            "queue_raw_resp": [],  # Changed from query_raw_resp
             "messages": state.get("messages", [])
         }
 
@@ -152,11 +153,11 @@ def pgicq_resp_validate(state: Dict, llm) -> Dict:
     print("NODE: pgicq_resp_validate - Validating RAG response")
     print(f"{'='*60}")
     
-    query_raw_resp = state.get("query_raw_resp", [])
+    queue_raw_resp = state.get("queue_raw_resp", [])  # Changed from query_raw_resp
     iteration_count = state.get("iteration_count", 0)
     
     # OPTIMIZED: Skip expensive validation if we got documents on first try
-    if iteration_count == 0 and len(query_raw_resp) > 0:
+    if iteration_count == 0 and len(queue_raw_resp) > 0:
         print("First retrieval successful with documents - skipping validation")
         return {
             "evaluator_decision": "yes",
@@ -168,9 +169,9 @@ def pgicq_resp_validate(state: Dict, llm) -> Dict:
     user_query = state.get("user_query", "")
     
     # Build minimal context for validation
-    if query_raw_resp:
+    if queue_raw_resp:  # Changed from query_raw_resp
         # Just check first doc snippet
-        first_doc = query_raw_resp[0] if isinstance(query_raw_resp[0], dict) else {}
+        first_doc = queue_raw_resp[0] if isinstance(queue_raw_resp[0], dict) else {}
         context = first_doc.get("content", "")[:200]  # Just 200 chars for validation
     else:
         context = "No documents retrieved"
@@ -294,18 +295,18 @@ def pgicq_synthesize_response(state: Dict, llm) -> Dict:
     print("NODE: pgicq_synthesize_response - Generating queue response")
     print(f"{'='*60}")
     
-    query_raw_resp = state.get('query_raw_resp', [])
+    queue_raw_resp = state.get('queue_raw_resp', [])  # Changed from query_raw_resp
     original_query = state.get('user_query', '')
     messages = state.get('messages', [])
     
     # OPTIMIZED: Use all docs but with smart truncation
-    if query_raw_resp and isinstance(query_raw_resp, list):
+    if queue_raw_resp and isinstance(queue_raw_resp, list):
         # Process all docs efficiently
         doc_contents = []
         total_chars = 0
         max_total_chars = 3000  # Total context limit
         
-        for i, doc in enumerate(query_raw_resp, 1):
+        for i, doc in enumerate(queue_raw_resp, 1):  # Changed from query_raw_resp
             if total_chars >= max_total_chars:
                 break  # Stop if we hit limit
                 

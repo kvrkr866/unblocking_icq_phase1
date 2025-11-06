@@ -55,17 +55,32 @@ PGICQ_KB_COLLECTION_NAME="pgicq_collection_1"
 
 #### Class for GridState to use with Langgraph ######################
 class GridState(TypedDict):
-    """State for Grid Chat workflow with conversation history."""
+    """State for Grid Chat workflow with conversation history and sequential flow support."""
     messages: Annotated[List[BaseMessage], "Conversation history"]
     user_query: str
     sql_query: str
-    query_raw_resp: List  # Database results
+    
+    # Diagnostics results
+    query_raw_resp: List  # Database results from diagnostics queries
+    
+    # NEW: Queue results (for sequential flow)
+    queue_raw_resp: List  # RAG results from queue queries
+    
+    # Final response
     query_final_resp: str
     conversation_context: str  # Summary of recent conversation
+    
+    # Iteration control
     iteration_count: int
     evaluator_decision: str
     evaluator_feedback: str
+    
+    # Query classification
     userquery_type: str
+    
+    # NEW: Station filtering (for future use)
+    station_filter: Optional[List[str]]  # Station IDs/names for filtering diagnostics
+    has_queue_info: bool  # Flag indicating if queue returned results
 
 #### Class for userquery classification  ######################
 class Userqueryclassifier(BaseModel):
@@ -87,4 +102,3 @@ class Evaluator(BaseModel):
 # Usage example: create the tables in 'events_database.db'
 if __name__ == "__main__":
     print(" ... NOTHING TODO, Bye ....  ")
-
