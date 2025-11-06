@@ -7,17 +7,18 @@
 # It is completely separate from backend logic.
 # Author: RK (kvrkr866@gmail.com)
 ##########################################################
-v27
+v29 - FIXED Gap Analysis Backend Call
 """
 
 import streamlit as st
 import time
+import os
 from typing import Optional, List, Dict
 from datetime import datetime
 
 
 class GridChatUI:
-    """Power Grids Interconnection Queue Analyzer system."""
+    """Power Grids Interconnection Queue Analyzer system with Gap Analysis."""
     
     # Predefined sample questions
     SAMPLE_QUESTIONS = [
@@ -47,6 +48,15 @@ class GridChatUI:
             st.session_state.processing = False
             st.session_state.current_query = None
             st.session_state.current_response = None
+            st.session_state.query_submitted = False  # Flag to control execution
+            
+            # Gap analysis state
+            st.session_state.gap_analysis_mode = False
+            st.session_state.gap_analysis_processing = False
+            st.session_state.gap_analysis_progress = 0
+            st.session_state.gap_analysis_step = ""
+            st.session_state.gap_report_path = None
+            st.session_state.uploaded_pdf_path = None
     
     def _initialize_backend(self):
         """Initialize backend components (lazy loading)."""
@@ -83,7 +93,7 @@ class GridChatUI:
     def _render_header(self):
         """Render application header."""
         st.title("⚡ Power Grids Interconnection Queue Analyzer")
-        st.caption("Ask questions about your interconnection queue in natural language")
+        st.caption("Ask questions about your interconnection queue in natural language • Analyze compliance documents")
     
     def _render_sidebar(self):
         """Render sidebar with sample questions and info."""
@@ -99,7 +109,7 @@ class GridChatUI:
                     question, 
                     key=f"sample_q_{idx}",
                     use_container_width=True,
-                    disabled=st.session_state.processing
+                    disabled=st.session_state.processing or st.session_state.gap_analysis_processing
                 ):
                     return question
             
@@ -119,6 +129,9 @@ class GridChatUI:
                 st.session_state.chat_history = []
                 st.session_state.current_query = None
                 st.session_state.current_response = None
+                st.session_state.gap_report_path = None
+                st.session_state.uploaded_pdf_path = None
+                st.session_state.query_submitted = False
                 st.rerun()
         
         return None
@@ -159,7 +172,7 @@ class GridChatUI:
                         st.markdown(f"**A:** {entry['response']}")
                         
                         # Metadata
-                        st.caption(f"⏱️ {entry['duration']:.2f}s | 🕒 {entry['timestamp']}")
+                        st.caption(f"⏱️ {entry['duration']:.2f}s | 🕐 {entry['timestamp']}")
                         
                         # Dotted line separator (except for last item)
                         if idx < len(st.session_state.chat_history) - 1:
@@ -176,12 +189,13 @@ class GridChatUI:
             st.warning("⚠️ Please enter a valid question")
             return
         
-        st.session_state.processing = True
+        # Set the new query and flag for execution
         st.session_state.current_query = query
         st.session_state.current_response = None
+        st.session_state.processing = True
+        st.session_state.query_submitted = True
         
-        # Rerun to show the question immediately
-        st.rerun()
+        # Don't rerun here - let it flow to execution immediately
     
     def _execute_query(self):
         """Execute the current query and show completion time."""
@@ -222,79 +236,244 @@ class GridChatUI:
         
         finally:
             st.session_state.processing = False
+            st.session_state.query_submitted = False
+            st.rerun()
+    
+    def _execute_gap_analysis(self):
+        """Execute gap analysis in backend. FIXED: Correct backend call."""
+        try:
+            # Get the uploaded file path
+            uploaded_file_path = st.session_state.uploaded_pdf_path
+            
+            if not uploaded_file_path or not os.path.exists(uploaded_file_path):
+                st.error("❌ Uploaded file not found")
+                st.session_state.gap_analysis_processing = False
+                return
+            
+            # Show progress
+            progress_placeholder = st.empty()
+            status_placeholder = st.empty()
+            
+            # Start analysis
+            status_placeholder.info("🔄 Starting gap analysis... This will take 2-5 minutes.")
+            progress_placeholder.progress(0)
+            
+            print(f"DEBUG: Calling gap analysis for: {uploaded_file_path}")
+            print(f"DEBUG: Backend object: {self.backend}")
+            
+            # FIXED: Correct backend call path
+            result = self.backend.process_gap_analysis(
+                pdf_path=uploaded_file_path
+            )
+            
+            print(f"DEBUG: Gap analysis result: {result}")
+            
+            if result.get("success"):
+                report_path = result.get("report_path")
+                st.session_state.gap_report_path = report_path
+                st.session_state.gap_analysis_progress = 100
+                st.session_state.gap_analysis_step = "Completed!"
+                
+                progress_placeholder.progress(100)
+                status_placeholder.success("✅ Gap analysis completed!")
+                
+            else:
+                status_placeholder.error(f"❌ Analysis failed: {result.get('status')}")
+            
+        except Exception as e:
+            st.error(f"❌ Error during gap analysis: {str(e)}")
+            st.exception(e)
+            print(f"DEBUG: Exception in gap analysis:")
+            import traceback
+            traceback.print_exc()
+        
+        finally:
+            st.session_state.gap_analysis_processing = False
+            time.sleep(2)
             st.rerun()
     
     def _render_input_section(self):
-        """Render user input section."""
-        col1, col2 = st.columns([5, 1])
+        """Render user input section with tabs for Chat and Gap Analysis."""
         
-        with col1:
-            user_input = st.text_input(
-                "Enter your question:",
-                placeholder="e.g., Show me all critical events from yesterday",
-                key="user_input_text",
-                disabled=st.session_state.processing,
-                label_visibility="collapsed"
+        # Create tabs
+        tab1, tab2 = st.tabs(["💬 Grid Query", "📊 Gap Analysis on Report"])
+        
+        # TAB 1: CHAT QUERY (Existing functionality)
+        with tab1:
+            col1, col2 = st.columns([5, 1])
+            
+            with col1:
+                user_input = st.text_input(
+                    "Enter your question:",
+                    placeholder="e.g., Show me all critical events from yesterday",
+                    key="user_input_text",
+                    disabled=st.session_state.processing or st.session_state.gap_analysis_processing,
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                submit_clicked = st.button(
+                    "Submit",
+                    use_container_width=True,
+                    disabled=st.session_state.processing or st.session_state.gap_analysis_processing,
+                    type="primary"
+                )
+            
+            if submit_clicked and user_input:
+                return user_input
+        
+        # TAB 2: GAP ANALYSIS (New functionality)
+        with tab2:
+            st.markdown("""
+            ### 📄 Upload Interconnection Request Document
+            Upload your technical analysis document (PDF format) for comprehensive gap analysis.
+            
+            **The analysis will check:**
+            - ✅ Section correctness against requirements
+            - ⚠️ Sections needing modifications
+            - 🔴 Missing mandatory sections
+            - 📋 Compliance requirements checklist
+            - 🧪 Required technical tests
+            - ⏱️ Queue wait time analysis
+            - ⚠️ Risk assessment
+            - 🌍 Environmental challenges
+            """)
+            
+            uploaded_file = st.file_uploader(
+                "Choose a PDF file",
+                type=['pdf'],
+                key="gap_analysis_pdf_upload",
+                disabled=st.session_state.gap_analysis_processing,
+                help="Upload your interconnection request technical analysis document"
             )
-        
-        with col2:
-            # Blue submit button
-            submit_clicked = st.button(
-                "Submit",
-                use_container_width=True,
-                disabled=st.session_state.processing,
-                type="primary"
-            )
-        
-        # Process submission
-        if submit_clicked and user_input:
-            return user_input
+            
+            col1, col2, col3 = st.columns([2, 2, 3])
+            
+            with col1:
+                analyze_button = st.button(
+                    "🔍 Analyze Document",
+                    disabled=uploaded_file is None or st.session_state.gap_analysis_processing,
+                    type="primary",
+                    use_container_width=True
+                )
+            
+            with col2:
+                if st.session_state.gap_report_path:
+                    if st.button("🗑️ Clear Report", use_container_width=True):
+                        st.session_state.gap_report_path = None
+                        st.session_state.uploaded_pdf_path = None
+                        st.rerun()
+            
+            # Handle analysis button click
+            if analyze_button and uploaded_file:
+                # Save uploaded file to temporary location
+                try:
+                    # Create uploads directory
+                    upload_dir = "./uploads/gap_analysis"
+                    os.makedirs(upload_dir, exist_ok=True)
+                    
+                    # Save file
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"uploaded_{timestamp}_{uploaded_file.name}"
+                    file_path = os.path.join(upload_dir, filename)
+                    
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    print(f"DEBUG: File saved to: {file_path}")
+                    
+                    st.session_state.uploaded_pdf_path = file_path
+                    st.session_state.gap_analysis_processing = True
+                    st.session_state.gap_analysis_progress = 0
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Error saving file: {str(e)}")
+            
+            # Show progress if processing
+            if st.session_state.gap_analysis_processing:
+                st.markdown("---")
+                st.markdown("### 🔄 Analysis in Progress")
+                
+                st.info("📊 Analyzing your document... This may take 2-5 minutes.")
+                st.warning("⏳ Please wait - do not close this page")
+                
+                # Progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                status_text.text("Processing...")
+            
+            # Show download button if report is ready
+            if st.session_state.gap_report_path and os.path.exists(st.session_state.gap_report_path):
+                st.markdown("---")
+                st.markdown("### ✅ Analysis Complete!")
+                
+                with open(st.session_state.gap_report_path, 'rb') as f:
+                    st.download_button(
+                        label="📥 Download Gap Analysis Report (DOCX)",
+                        data=f,
+                        file_name=os.path.basename(st.session_state.gap_report_path),
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key="download_gap_report_main",
+                        use_container_width=True
+                    )
+                
+                st.success(f"✅ Report saved: {os.path.basename(st.session_state.gap_report_path)}")
         
         return None
     
     def run(self):
         """Main run method for the UI."""
         
-        # Step 1: Render Header at top (this will be pinned)
+        # Step 1: Render Header
         self._render_header()
         
-        # Step 2: Auto-initialize backend if not already done
+        # Step 2: Auto-initialize backend
         if not st.session_state.initialized:
             self._initialize_backend()
             return
         
-        # Step 3: Ensure backend is loaded in session
+        # Step 3: Ensure backend is loaded
         if st.session_state.backend_ready:
             self.backend = st.session_state.backend_instance
         
         # Step 4: Render Sidebar
         selected_sample = self._render_sidebar()
         
-        # Step 5: Render Input Section (this stays at top)
+        # Step 5: Render Input Section (with tabs)
         user_query = self._render_input_section()
         
-        # Step 6: Determine query to process
-        query_to_process = user_query or selected_sample
-        
-        # Step 7: If there's a new query and not processing, start processing
-        if query_to_process and not st.session_state.processing and query_to_process != st.session_state.current_query:
-            self._process_query(query_to_process)
+        # Step 6: If gap analysis is processing, execute it
+        if st.session_state.gap_analysis_processing and not st.session_state.gap_report_path:
+            self._execute_gap_analysis()
             return
         
-        # Step 8: If currently processing, execute the query
-        if st.session_state.processing and st.session_state.current_query and not st.session_state.current_response:
+        # Step 7: Handle chat queries with proper flow control
+        query_to_process = user_query or selected_sample
+        
+        # If there's a new query, set it up for processing
+        if query_to_process and query_to_process != st.session_state.current_query:
+            self._process_query(query_to_process)
+            # Fall through to Step 8 to execute immediately
+        
+        # Step 8: Execute if we have a query ready to process
+        if (st.session_state.processing and 
+            st.session_state.current_query and 
+            not st.session_state.current_response and
+            st.session_state.query_submitted):
             self._execute_query()
             return
         
-        # Step 9: Render current Q&A (stays visible)
+        # Step 9: Render current Q&A
         self._render_current_qa()
         
-        # Step 10: Render History in scrollable box at bottom
+        # Step 10: Render History
         self._render_history()
         
         # Footer
         st.markdown("<br/>", unsafe_allow_html=True)
-        st.caption("Power Grids Interconnection Queue Analyzer v1.0 | Capstone Team 16")
+        st.caption("Power Grids Interconnection Queue Analyzer v1.0 | Capstone Team 16 | Now with Gap Analysis 📊")
 
 
 # Custom CSS for better styling
@@ -317,6 +496,31 @@ def inject_custom_css():
         /* Input field styling */
         .stTextInput input {
             font-size: 15px !important;
+        }
+        
+        /* Tab styling */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 24px;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            height: 50px;
+            padding-left: 20px;
+            padding-right: 20px;
+            font-size: 16px;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            background-color: #1f77b4;
+            color: white;
+        }
+        
+        /* File uploader styling */
+        .stFileUploader {
+            padding: 20px;
+            border: 2px dashed #1f77b4;
+            border-radius: 10px;
+            background-color: #f0f8ff;
         }
         
         /* FORCE Submit Button to BLUE - multiple selectors */

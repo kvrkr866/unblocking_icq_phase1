@@ -48,6 +48,11 @@ PGICQ_KB_PERSIST_DIRECTORY="./databases/pgicq_kb"
 PGICQ_KB_COLLECTION_NAME="pgicq_collection_1"
 #### constants of Power grid interconnection Queue - END ######################
 
+#### constants of Gap Analysis - START #########################################
+GAP_ANALYSIS_UPLOAD_DIR = "./uploads_gap_analysis"
+GAP_ANALYSIS_REPORTS_DIR = "./reports_gap_analysis"
+#### constants of Gap Analysis - END ###########################################
+
 
 ####################################################################
 # Class declarations - START 
@@ -63,7 +68,7 @@ class GridState(TypedDict):
     # Diagnostics results
     query_raw_resp: List  # Database results from diagnostics queries
     
-    # NEW: Queue results (for sequential flow)
+    # Queue results (for sequential flow)
     queue_raw_resp: List  # RAG results from queue queries
     
     # Final response
@@ -78,9 +83,37 @@ class GridState(TypedDict):
     # Query classification
     userquery_type: str
     
-    # NEW: Station filtering (for future use)
+    # Station filtering (for future use)
     station_filter: Optional[List[str]]  # Station IDs/names for filtering diagnostics
     has_queue_info: bool  # Flag indicating if queue returned results
+    
+    # NEW: Gap Analysis fields
+    is_gap_analysis: bool  # Flag to indicate gap analysis mode
+    uploaded_pdf_path: Optional[str]  # Path to uploaded PDF
+    extracted_text: Optional[str]  # Full text from PDF
+    document_sections: Optional[Dict[str, str]]  # section_name: content mapping
+    document_metadata: Optional[Dict[str, str]]  # station, region, country, type
+    
+    # Gap analysis findings (from RAG queries)
+    correct_sections: Optional[List[Dict]]  # Sections that are correct with references
+    sections_to_modify: Optional[List[Dict]]  # Sections needing changes with details
+    missing_sections: Optional[List[Dict]]  # Required sections not in document
+    compliance_requirements: Optional[List[Dict]]  # Mandatory compliance list
+    technical_tests: Optional[List[Dict]]  # Required technical tests
+    queue_wait_analysis: Optional[Dict]  # Queue wait time info
+    risk_assessment: Optional[List[Dict]]  # Risk information
+    environmental_challenges: Optional[List[Dict]]  # Environmental requirements
+    
+    # Diagnostics events (no analysis, just raw data)
+    station_diagnostics: Optional[List[Dict]]  # Recent events from DB
+    
+    # Final gap analysis report
+    gap_report_content: Optional[str]  # Report content (markdown/text)
+    gap_report_path: Optional[str]  # Path to generated DOCX/PDF
+    
+    # Progress tracking
+    current_step: Optional[str]  # Current processing step
+    progress_percent: Optional[int]  # Progress percentage (0-100)
 
 #### Class for userquery classification  ######################
 class Userqueryclassifier(BaseModel):

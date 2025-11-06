@@ -1,0 +1,336 @@
+"""
+##########################################################
+#
+# Capstone Team 16
+# Gap Analysis Report Document Generation
+#
+# This module handles DOCX and PDF report generation.
+# No analysis logic - only document formatting and creation.
+#
+# Author: RK (kvrkr866@gmail.com)
+##########################################################
+"""
+
+import os
+import os.path as osp
+from datetime import datetime
+from typing import Dict, Optional
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.style import WD_STYLE_TYPE
+
+
+def generate_gap_analysis_docx(
+    gap_report_content: str,
+    document_metadata: Dict,
+    output_dir: str = "./reports/gap_analysis"
+) -> str:
+    """
+    Generate a professional DOCX report from gap analysis content.
+    
+    Args:
+        gap_report_content: The synthesized report content (markdown-like text)
+        document_metadata: Metadata about the analyzed document
+        output_dir: Directory to save the report
+        
+    Returns:
+        Path to the generated DOCX file
+    """
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    station_name = document_metadata.get('station_name', 'Unknown_Station').replace(' ', '_')
+    filename = f"Gap_Analysis_Report_{station_name}_{timestamp}.docx"
+    output_path = osp.join(output_dir, filename)
+    
+    # Create new document
+    doc = Document()
+    
+    # Set up styles
+    _setup_document_styles(doc)
+    
+    # Add title page
+    _add_title_page(doc, document_metadata, timestamp)
+    
+    # Add page break
+    doc.add_page_break()
+    
+    # Parse and add content
+    _add_report_content(doc, gap_report_content)
+    
+    # Save document
+    doc.save(output_path)
+    
+    print(f"✅ Gap analysis report generated: {output_path}")
+    return output_path
+
+
+def _setup_document_styles(doc: Document):
+    """Set up custom styles for the document."""
+    styles = doc.styles
+    
+    # Heading 1 style (for main sections)
+    if 'Custom Heading 1' not in styles:
+        h1_style = styles.add_style('Custom Heading 1', WD_STYLE_TYPE.PARAGRAPH)
+        h1_style.font.size = Pt(16)
+        h1_style.font.bold = True
+        h1_style.font.color.rgb = RGBColor(0, 70, 127)  # Dark blue
+        h1_style.paragraph_format.space_before = Pt(12)
+        h1_style.paragraph_format.space_after = Pt(6)
+    
+    # Heading 2 style (for subsections)
+    if 'Custom Heading 2' not in styles:
+        h2_style = styles.add_style('Custom Heading 2', WD_STYLE_TYPE.PARAGRAPH)
+        h2_style.font.size = Pt(14)
+        h2_style.font.bold = True
+        h2_style.font.color.rgb = RGBColor(0, 100, 180)  # Medium blue
+        h2_style.paragraph_format.space_before = Pt(10)
+        h2_style.paragraph_format.space_after = Pt(4)
+    
+    # Heading 3 style
+    if 'Custom Heading 3' not in styles:
+        h3_style = styles.add_style('Custom Heading 3', WD_STYLE_TYPE.PARAGRAPH)
+        h3_style.font.size = Pt(12)
+        h3_style.font.bold = True
+        h3_style.font.color.rgb = RGBColor(0, 130, 200)  # Light blue
+        h3_style.paragraph_format.space_before = Pt(8)
+        h3_style.paragraph_format.space_after = Pt(3)
+
+
+def _add_title_page(doc: Document, metadata: Dict, timestamp: str):
+    """Add professional title page."""
+    # Title
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title.add_run("GAP ANALYSIS REPORT\n")
+    title_run.font.size = Pt(24)
+    title_run.font.bold = True
+    title_run.font.color.rgb = RGBColor(0, 70, 127)
+    
+    subtitle = title.add_run("Interconnection Request Technical Analysis")
+    subtitle.font.size = Pt(14)
+    subtitle.font.color.rgb = RGBColor(80, 80, 80)
+    
+    doc.add_paragraph()  # Spacer
+    
+    # Document information table
+    info_table = doc.add_table(rows=6, cols=2)
+    info_table.style = 'Light Grid Accent 1'
+    
+    # Populate table
+    info_data = [
+        ("Station:", metadata.get('station_name', 'Not specified')),
+        ("Region:", metadata.get('region', 'Not specified')),
+        ("Country:", metadata.get('country', 'Not specified')),
+        ("Request Type:", metadata.get('request_type', 'Not specified')),
+        ("Report Generated:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        ("Analysis ID:", timestamp)
+    ]
+    
+    for i, (label, value) in enumerate(info_data):
+        info_table.rows[i].cells[0].text = label
+        info_table.rows[i].cells[1].text = value
+        # Make label bold
+        info_table.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
+    
+    doc.add_paragraph()  # Spacer
+    
+    # Footer note
+    footer = doc.add_paragraph()
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer_run = footer.add_run(
+        "\n\n\nThis report was generated by the Power Grids Interconnection Queue Analyzer\n"
+        "Capstone Team 16 - Grid Chat System"
+    )
+    footer_run.font.size = Pt(10)
+    footer_run.font.color.rgb = RGBColor(120, 120, 120)
+
+
+def _add_report_content(doc: Document, content: str):
+    """
+    Parse report content and add to document with proper formatting.
+    
+    Handles:
+    - Headers (# ## ###)
+    - Bullet points (-)
+    - Bold text (**)
+    - References in square brackets
+    """
+    lines = content.split('\n')
+    
+    in_list = False
+    
+    for line in lines:
+        line = line.strip()
+        
+        if not line:
+            # Empty line - add spacing
+            if not in_list:
+                doc.add_paragraph()
+            continue
+        
+        # Handle headers
+        if line.startswith('# '):
+            in_list = False
+            # Level 1 header
+            header_text = line[2:].strip()
+            p = doc.add_paragraph(header_text, style='Custom Heading 1')
+            
+        elif line.startswith('## '):
+            in_list = False
+            # Level 2 header
+            header_text = line[3:].strip()
+            p = doc.add_paragraph(header_text, style='Custom Heading 2')
+            
+        elif line.startswith('### '):
+            in_list = False
+            # Level 3 header
+            header_text = line[4:].strip()
+            p = doc.add_paragraph(header_text, style='Custom Heading 3')
+        
+        # Handle bullet points
+        elif line.startswith('- ') or line.startswith('* '):
+            in_list = True
+            bullet_text = line[2:].strip()
+            p = doc.add_paragraph(style='List Bullet')
+            _add_formatted_text(p, bullet_text)
+        
+        # Handle numbered lists
+        elif len(line) > 2 and line[0].isdigit() and line[1] == '.':
+            in_list = True
+            list_text = line[line.index('.')+1:].strip()
+            p = doc.add_paragraph(style='List Number')
+            _add_formatted_text(p, list_text)
+        
+        # Regular paragraph
+        else:
+            in_list = False
+            p = doc.add_paragraph()
+            _add_formatted_text(p, line)
+
+
+def _add_formatted_text(paragraph, text: str):
+    """
+    Add text to paragraph with formatting (bold, references).
+    
+    Handles:
+    - **bold text**
+    - [References, p. X]
+    """
+    # Simple parser for bold and references
+    parts = text.split('**')
+    
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            # Regular text
+            run = paragraph.add_run(part)
+        else:
+            # Bold text
+            run = paragraph.add_run(part)
+            run.font.bold = True
+    
+    # Note: More sophisticated markdown parsing could be added here
+    # For now, keeping it simple and clean
+
+
+def generate_gap_analysis_pdf(docx_path: str) -> Optional[str]:
+    """
+    Convert DOCX report to PDF (optional feature).
+    
+    Args:
+        docx_path: Path to the DOCX file
+        
+    Returns:
+        Path to PDF file if successful, None otherwise
+        
+    Note:
+        Requires docx2pdf library and MS Word/LibreOffice installed.
+        This is optional - we'll implement if time permits.
+    """
+    try:
+        from docx2pdf import convert
+        
+        pdf_path = docx_path.replace('.docx', '.pdf')
+        convert(docx_path, pdf_path)
+        
+        print(f"✅ PDF report generated: {pdf_path}")
+        return pdf_path
+        
+    except ImportError:
+        print("⚠️ docx2pdf not available - PDF generation skipped")
+        print("   Install with: pip install docx2pdf")
+        return None
+        
+    except Exception as e:
+        print(f"⚠️ PDF generation failed: {str(e)}")
+        print("   DOCX report is still available")
+        return None
+
+
+##########################################################
+# Usage example
+##########################################################
+if __name__ == "__main__":
+    # Test document generation
+    test_metadata = {
+        'station_name': 'Test Station ABC',
+        'region': 'California',
+        'country': 'USA',
+        'request_type': 'New Connection'
+    }
+    
+    test_content = """
+# EXECUTIVE SUMMARY
+
+This is a test gap analysis report.
+
+## Key Findings
+
+- Finding 1: Document is mostly complete
+- Finding 2: Some modifications needed
+- Finding 3: Missing environmental section
+
+# 1. DOCUMENT OVERVIEW
+
+Document contains **7 sections** covering technical specifications.
+
+## 1.1 Sections Present
+
+The following sections are present:
+- Executive Summary
+- Technical Specifications
+- Grid Connection Details
+
+# 2. SECTION-BY-SECTION ANALYSIS
+
+## 2.1 Correct Sections
+
+**Executive Summary** [CAISO Guidelines, p. 12]
+- Meets all requirements
+- Clear and comprehensive
+
+## 2.2 Sections Requiring Modifications
+
+**Technical Specifications** [IEEE Standards, p. 45]
+- Issue: Missing voltage ratings
+- Recommendation: Add detailed voltage specifications
+
+# 3. RECOMMENDATIONS
+
+1. Add missing environmental section
+2. Update technical specifications
+3. Include compliance certifications
+"""
+    
+    output_path = generate_gap_analysis_docx(
+        gap_report_content=test_content,
+        document_metadata=test_metadata
+    )
+    
+    print(f"\nTest report created: {output_path}")
+    
+    # Optionally try PDF conversion
+    pdf_path = generate_gap_analysis_pdf(output_path)

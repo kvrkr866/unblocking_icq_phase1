@@ -1,0 +1,193 @@
+(problem_first_ai) E:\problem_first_ai\capstore16_code\unblocking_icq_phase1\grid-chat-streamlit>streamlit run app.py
+2025-11-06 19:23:08.609 Failed to scan component manifests: 'NoneType' object has no attribute 'lower'
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.0.101:8501
+
+âœ“ LLM initialized
+âœ“ Memory initialized
+âœ“ Embeddings initialized
+âœ“ PGICQ KB Vector DB found - reusing existing embeddings
+âœ“ PGICQ KB (Chroma Vector DB) initialized
+âœ“ Graph with sequential queueâ†’diagnostics flow compiled
+âœ“ Graph built successfully
+âœ“ Opik tracer initialized
+DEBUG: File saved to: ./uploads/gap_analysis\uploaded_20251106_192357_InterconnectionRequest-JAR-DtC.pdf
+DEBUG: Calling gap analysis for: ./uploads/gap_analysis\uploaded_20251106_192357_InterconnectionRequest-JAR-DtC.pdf
+DEBUG: Backend object: <grid_chat.GridChatBackend object at 0x000001BED81EA550>
+GridChatBackend: Calling process_gap_analysis for ./uploads/gap_analysis\uploaded_20251106_192357_InterconnectionRequest-JAR-DtC.pdf
+
+============================================================
+STARTING GAP ANALYSIS
+PDF: ./uploads/gap_analysis\uploaded_20251106_192357_InterconnectionRequest-JAR-DtC.pdf
+============================================================
+
+
+============================================================
+NODE: userquery_classifier
+============================================================
+Classifying: Gap Analysis Request
+â†’ Classified as: general
+
+Routing: general
+â†’ General response
+
+============================================================
+
+============================================================
+NODE: prepare_final_response
+============================================================
+â†’ General response
+Generating general response
+NODE: extract_pdf_and_sections
+============================================================
+Extracting text from: ./uploads/gap_analysis\uploaded_20251106_192357_InterconnectionRequest-JAR-DtC.pdf
+Extracted 3647 characters from 2 pages
+Identifying document sections with LLM...
+Identified 5 sections
+Metadata: {'station_name': 'Palo Alto 110 kV Substation', 'region': 'Palo Alto / California', 'country': 'United States', 'request_type': 'New connection (interconnection request for new 80 MW load)'}
+
+============================================================
+NODE: validate_sections_rag
+============================================================
+
+Validating section 1/5: Header / Identification
+
+Generic RAG Query: What are the requirements for the 'Header / Identification' section in interconnection requests?...     
+Retrieved 5 documents
+âœ— Header / Identification needs review
+
+Validating section 2/5: 1. Project Overview and Scope
+
+Generic RAG Query: What are the requirements for the '1. Project Overview and Scope' section in interconnection request... 
+Retrieved 5 documents
+âœ— 1. Project Overview and Scope needs review
+
+Validating section 3/5: 2. Summary of Analysis and Findings
+
+Generic RAG Query: What are the requirements for the '2. Summary of Analysis and Findings' section in interconnection r... 
+Retrieved 5 documents
+âœ— 2. Summary of Analysis and Findings needs review
+
+Validating section 4/5: 3. Proposed Mitigation and Network Upgrades
+
+Generic RAG Query: What are the requirements for the '3. Proposed Mitigation and Network Upgrades' section in interconn... 
+Retrieved 5 documents
+âœ— 3. Proposed Mitigation and Network Upgrades needs review
+
+Validating section 5/5: 4. Conclusion and Request for Interconnection
+
+Generic RAG Query: What are the requirements for the '4. Conclusion and Request for Interconnection' section in interco... 
+Retrieved 5 documents
+âœ— 4. Conclusion and Request for Interconnection needs review
+
+Found 0 correct sections
+
+============================================================
+NODE: identify_modifications_rag
+============================================================
+
+Checking modifications for: Header / Identification
+
+Generic RAG Query: What are the detailed requirements and compliance standards for 'Header / Identification' in interco... 
+Retrieved 5 documents
+⚠️ Header / Identification needs modifications
+
+Checking modifications for: 1. Project Overview and Scope
+
+Generic RAG Query: What are the detailed requirements and compliance standards for '1. Project Overview and Scope' in i... 
+Retrieved 5 documents
+⚠️ 1. Project Overview and Scope needs modifications
+
+Checking modifications for: 2. Summary of Analysis and Findings
+
+Generic RAG Query: What are the detailed requirements and compliance standards for '2. Summary of Analysis and Findings... 
+Retrieved 5 documents
+⚠️ 2. Summary of Analysis and Findings needs modifications
+
+Checking modifications for: 3. Proposed Mitigation and Network Upgrades
+
+Generic RAG Query: What are the detailed requirements and compliance standards for '3. Proposed Mitigation and Network ... 
+Retrieved 5 documents
+⚠️ 3. Proposed Mitigation and Network Upgrades needs modifications
+
+Checking modifications for: 4. Conclusion and Request for Interconnection
+
+Generic RAG Query: What are the detailed requirements and compliance standards for '4. Conclusion and Request for Inter... 
+Retrieved 5 documents
+⚠️ 4. Conclusion and Request for Interconnection needs modifications
+
+Found 5 sections needing modifications
+
+============================================================
+NODE: find_missing_sections_rag
+============================================================
+Checking for missing sections for New connection (interconnection request for new 80 MW load) request
+
+Generic RAG Query: What are all mandatory sections required for New connection (interconnection request for new 80 MW l... 
+Retrieved 10 documents
+Found 10 missing sections
+
+============================================================
+NODE: fetch_compliance_reqs_rag
+============================================================
+
+Generic RAG Query: What are the mandatory compliance requirements for New connection (interconnection request for new 8... 
+Retrieved 10 documents
+Found 8 compliance requirements
+
+============================================================
+NODE: fetch_technical_tests_rag
+============================================================
+
+Generic RAG Query: What technical tests and validation procedures are required for New connection (interconnection requ... 
+Retrieved 10 documents
+Found 5 technical tests
+
+============================================================
+NODE: analyze_queue_rag
+============================================================
+
+Generic RAG Query: Current queue wait time and open interconnection requests at Palo Alto 110 kV Substation in Palo Alt... 
+Retrieved 10 documents
+Not able to find queue wait time
+Queue analysis: Not able to find
+
+============================================================
+NODE: assess_risks_rag
+============================================================
+
+Generic RAG Query: What are the risks and challenges for New connection (interconnection request for new 80 MW load) in... 
+Retrieved 10 documents
+Found 14 risks
+
+============================================================
+NODE: identify_environmental_rag
+============================================================
+
+Generic RAG Query: What are the environmental requirements and challenges for New connection (interconnection request f... 
+Retrieved 10 documents
+Found 11 environmental challenges
+
+============================================================
+NODE: fetch_diagnostics_for_gap
+============================================================
+FUTURE: Will filter by station: Palo Alto 110 kV Substation
+CURRENT: Fetching all recent events (station filter not yet implemented)
+Retrieved 6 diagnostic events
+
+============================================================
+NODE: synthesize_gap_report
+============================================================
+Generating comprehensive gap analysis report...
+Generated report: 37816 characters
+
+============================================================
+NODE: generate_gap_report_file
+============================================================
+✅ Gap analysis report generated: ./reports_gap_analysis\Gap_Analysis_Report_Palo_Alto_110_kV_Substation_20251106_193606.docx
+Report generated: ./reports_gap_analysis\Gap_Analysis_Report_Palo_Alto_110_kV_Substation_20251106_193606.docx
+GridChatBackend: Gap analysis result: {'success': True, 'report_path': './reports_gap_analysis\\Gap_Analysis_Report_Palo_Alto_110_kV_Substation_20251106_193606.docx', 'status': 'Report generated successfully', 'progress': 100}
+DEBUG: Gap analysis result: {'success': True, 'report_path': './reports_gap_analysis\\Gap_Analysis_Report_Palo_Alto_110_kV_Substation_20251106_193606.docx', 'status': 'Report generated successfully', 'progress': 100}

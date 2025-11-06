@@ -360,3 +360,69 @@ Provide a clear answer. Cite sources when possible."""
         "messages": updated_messages,
         "conversation_context": conversation_summary
     }
+
+####################################################################
+def pgicq_kb_query_generic(
+    query: str,
+    retriever,
+    vector_store,
+    k: int = 10
+) -> List[Dict]:
+    """
+    Generic RAG query function for gap analysis.
+    Reuses existing RAG infrastructure for any knowledge base query.
+    
+    This function is designed to be called from gap analysis nodes
+    with specific queries for different analysis aspects.
+    
+    Args:
+        query: The specific query string to search for
+        retriever: Vector store retriever instance
+        vector_store: ChromaDB vector store instance
+        k: Number of documents to retrieve (default: 10)
+        
+    Returns:
+        List of dictionaries containing:
+            - id: Document index
+            - filename: Source document name
+            - content: Document content
+            - page: Page number if available
+    """
+    print(f"\nGeneric RAG Query: {query[:100]}...")
+    
+    try:
+        # Use MMR for better diversity and relevance
+        if retriever:
+            docs = retriever.invoke(query)
+        else:
+            docs = vector_store.max_marginal_relevance_search(
+                query, 
+                k=k,
+                fetch_k=k*2  # Fetch more, then select diverse subset
+            )
+        
+        print(f"Retrieved {len(docs)} documents")
+        
+        # Format documents consistently
+        formatted_docs = []
+        for idx, doc in enumerate(docs, 1):
+            # Extract metadata
+            source = doc.metadata.get("source", "unknown")
+            filename = osp.basename(source)
+            
+            # Try to get page number if available
+            page = doc.metadata.get("page", "N/A")
+            
+            formatted_docs.append({
+                "id": idx,
+                "filename": filename,
+                "content": doc.page_content,
+                "page": str(page),
+                "source": source
+            })
+        
+        return formatted_docs
+        
+    except Exception as e:
+        print(f"ERROR in generic RAG query: {str(e)}")
+        return []

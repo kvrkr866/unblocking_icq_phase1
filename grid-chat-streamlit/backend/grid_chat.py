@@ -8,7 +8,7 @@
 #  
 #  Author RK (kvrkr866@gmail.com)
 ##########################################################
-v4
+v5 - Added Gap Analysis Support
 """
 
 import sys
@@ -78,6 +78,49 @@ class GridChatBackend:
             return response
         except Exception as e:
             raise Exception(f"Error processing query: {str(e)}")
+    
+    def process_gap_analysis(
+        self,
+        pdf_path: str,
+        thread_id: Optional[str] = None
+    ) -> Dict:
+        """
+        Process gap analysis for uploaded PDF.
+        
+        Args:
+            pdf_path: Path to uploaded PDF file
+            thread_id: Optional thread ID for conversation
+        
+        Returns:
+            Dictionary with:
+                - success: Boolean indicating if analysis succeeded
+                - report_path: Path to generated report file
+                - status: Current status message
+                - progress: Progress percentage (0-100)
+        
+        Raises:
+            RuntimeError: If backend is not initialized
+        """
+        if not self._initialized or self.grid_chat is None:
+            raise RuntimeError(
+                "Backend not initialized. Call initialize() first."
+            )
+        
+        try:
+            print(f"GridChatBackend: Calling process_gap_analysis for {pdf_path}")
+            result = self.grid_chat.process_gap_analysis(pdf_path, thread_id)
+            print(f"GridChatBackend: Gap analysis result: {result}")
+            return result
+        except Exception as e:
+            print(f"GridChatBackend: Error in gap analysis: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "report_path": None,
+                "status": f"Error: {str(e)}",
+                "progress": 0
+            }
     
     def is_ready(self) -> bool:
         """Check if backend is ready to process queries."""
