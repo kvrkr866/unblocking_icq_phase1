@@ -422,7 +422,7 @@ INSTRUCTIONS:
 1. Start with the queue/interconnection information (this is the primary focus)
 2. Then present related diagnostic events as supporting context
 3. Clearly structure the response: Queue Info first, then Events
-4. If no events found, focus on queue information only
+4. If no events found, mention cleary "No Events found" 
 
 RESPONSE:"""
         
@@ -659,9 +659,6 @@ RESPONSE:"""
         workflow_builder.add_node("fetch_diagnostics_for_gap", self.fetch_diagnostics_for_gap)
         workflow_builder.add_node("synthesize_gap_report", self.synthesize_gap_report)
         workflow_builder.add_node("generate_gap_report_file", self.generate_gap_report_file)
-        
-        # ROUTING: Update from START
-        workflow_builder.add_edge(START, "userquery_classifier")
         
         # NEW: Updated conditional routing to handle gap analysis
         def route_from_classifier(state: GridState) -> str:

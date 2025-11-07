@@ -1,0 +1,18 @@
+# Test Dependencies for RAG Test Suite
+
+# Testing Framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+
+# RAG Evaluation
+ragas>=0.1.0  # RAG Assessment framework
+langsmith>=0.0.50  # Optional: LangChain evaluation platform
+
+# Metrics and Analysis
+numpy>=1.24.0
+scikit-learn>=1.3.0  # For additional metrics if needed
+
+# Utilities
+python-dotenv>=1.0.0  # For environment variables
+
