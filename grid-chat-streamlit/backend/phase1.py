@@ -556,6 +556,10 @@ RESPONSE:"""
             "configurable": {"thread_id": session_id},
             "recursion_limit": 30,  # Increased for gap analysis
         }
+
+        if self.tracer:
+            config["callbacks"] = [self.tracer]
+            print("✓ Tracing enabled for gap analysis")
         
         # Initialize gap analysis state
         initial_state = {

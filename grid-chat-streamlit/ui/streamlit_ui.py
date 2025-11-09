@@ -29,8 +29,8 @@ class GridChatUI:
         "Show me critical events in the last week",
         "I want to connect to CAISO, what is the interconnection process that I should follow?",
         "I want to connect to the 110 kV level, what are feasible points above that level?",
-        "What are the expected load and generation levels in 2 years and in 5 years in [name of a specific station]?",
-        "I am interested in connecting to station [name of a specific station] in CAISO, what are the planned projects and which interconnection requests are in the queue for that point?"
+        "What are the expected load and generation levels in 2 years and in 5 years in Mesa 500 kV station?",
+        "I am interested in connecting to Big Sky 220 kV station in CAISO, what are the planned projects and which interconnection requests are in the queue for that point?"
     ]
     
     def __init__(self):
@@ -254,6 +254,9 @@ class GridChatUI:
             progress_placeholder = st.empty()
             status_placeholder = st.empty()
             
+             # Record start time
+            start_time = time.time()
+			
             # Start analysis
             status_placeholder.info("🔄 Starting gap analysis... This will take 2-5 minutes.")
             progress_placeholder.progress(0)
@@ -266,6 +269,10 @@ class GridChatUI:
                 pdf_path=uploaded_file_path
             )
             
+            			
+            # Calculate final duration
+            duration = time.time() - start_time
+
             print(f"DEBUG: Gap analysis result: {result}")
             
             if result.get("success"):
@@ -275,7 +282,7 @@ class GridChatUI:
                 st.session_state.gap_analysis_step = "Completed!"
                 
                 progress_placeholder.progress(100)
-                status_placeholder.success("✅ Gap analysis completed!")
+                status_placeholder.success(f"✅ Gap analysis completed! in {duration:.2f} seconds")
                 
             else:
                 status_placeholder.error(f"❌ Analysis failed: {result.get('status')}")
